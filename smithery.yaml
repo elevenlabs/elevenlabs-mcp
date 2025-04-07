@@ -1,0 +1,32 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - apiKey
+    properties:
+      apiKey:
+        type: string
+        description: ElevenLabs API key. This key is required to access ElevenLabs API
+          endpoints.
+      basePath:
+        type: string
+        description: Optional base path for MCP files (ELEVENLABS_MCP_BASE_PATH).
+          Defaults to not set.
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({
+      command: 'elevenlabs-mcp',
+      args: [],
+      env: Object.assign({}, process.env, {
+        ELEVENLABS_API_KEY: config.apiKey,
+        ...(config.basePath ? { ELEVENLABS_MCP_BASE_PATH: config.basePath } : {})
+      })
+    })
+  exampleConfig:
+    apiKey: your_api_key_here
+    basePath: /path/to/optional/base

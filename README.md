@@ -2,6 +2,7 @@
 
 <div class="title-block" style="text-align: center;" align="center">
 
+  <a href="https://smithery.ai/server/@elevenlabs/elevenlabs-mcp"><img alt="Smithery Badge" src="https://smithery.ai/badge/@elevenlabs/elevenlabs-mcp"></a>
   [![Discord Community](https://img.shields.io/badge/discord-@elevenlabs-000000.svg?style=for-the-badge&logo=discord&labelColor=000)](https://discord.gg/elevenlabs)
   [![Twitter](https://img.shields.io/badge/Twitter-@elevenlabsio-000000.svg?style=for-the-badge&logo=twitter&labelColor=000)](https://x.com/ElevenLabsDevs)
   [![PyPI](https://img.shields.io/badge/PyPI-elevenlabs--mcp-000000.svg?style=for-the-badge&logo=pypi&labelColor=000)](https://pypi.org/project/elevenlabs-mcp)
@@ -33,6 +34,14 @@
   }
 }
 
+```
+
+### Installing via Smithery
+
+To install ElevenLabs MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@elevenlabs/elevenlabs-mcp):
+
+```bash
+npx -y @smithery/cli install @elevenlabs/elevenlabs-mcp --client claude
 ```
 
 If you're using Windows, you will have to enable "Developer Mode" in Claude Desktop to use the MCP server. Click "Help" in the hamburger menu in the top left and select "Enable Developer Mode".
