@@ -27,7 +27,7 @@
       "command": "uvx",
       "args": ["elevenlabs-mcp"],
       "env": {
-        "ELEVENLABS_API_KEY": "<insert-your-api-key-here"
+        "ELEVENLABS_API_KEY": "<insert-your-api-key-here>"
       }
     }
   }
