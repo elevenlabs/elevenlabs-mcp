@@ -18,7 +18,15 @@
 
 1. Get your API key from [ElevenLabs](https://elevenlabs.io/app/settings/api-keys). There is a free tier with 10k credits per month.
 2. Install `uv` (Python package manager), install with `curl -LsSf https://astral.sh/uv/install.sh | sh` or see the `uv` [repo](https://github.com/astral-sh/uv) for additional install methods.
-3. Go to Claude > Settings > Developer > Edit Config > claude_desktop_config.json to include the following:
+3. Run `npx mcp-config elevenlabs` and enter your ElevenLabs API key retrieved in step 1
+
+### Manual Installation
+
+Instead of using `npx mcp-config`, you can manually configure the MCP config file of your MCP client: 
+
+#### Using Claude 
+
+Go to Claude > Settings > Developer > Edit Config > claude_desktop_config.json to include the following:
 
 ```
 {
@@ -37,7 +45,7 @@
 
 If you're using Windows, you will have to enable "Developer Mode" in Claude Desktop to use the MCP server. Click "Help" in the hamburger menu at the top left and select "Enable Developer Mode".
 
-## Other MCP clients
+#### Other MCP clients
 
 For other clients like Cursor and Windsurf, run:
 1. `pip install elevenlabs-mcp`
