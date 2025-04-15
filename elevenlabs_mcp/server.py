@@ -70,6 +70,27 @@ mcp = FastMCP("ElevenLabs")
         speed (float, optional): Speed of the generated audio. Controls the speed of the generated speech. Values range from 0.7 to 1.2, with 1.0 being the default speed. Lower values create slower, more deliberate speech while higher values produce faster-paced speech. Extreme values can impact the quality of the generated speech. Range is 0.7 to 1.2.
         output_directory (str, optional): Directory where files should be saved.
             Defaults to $HOME/Desktop if not provided.
+        language: ISO 639-1 language code for the voice.
+        output_format (str, optional): Output format of the generated audio. Formatted as codec_sample_rate_bitrate. So an mp3 with 22.05kHz sample rate at 32kbs is represented as mp3_22050_32. MP3 with 192kbps bitrate requires you to be subscribed to Creator tier or above. PCM with 44.1kHz sample rate requires you to be subscribed to Pro tier or above. Note that the μ-law format (sometimes written mu-law, often approximated as u-law) is commonly used for Twilio audio inputs.
+            Defaults to "mp3_44100_128". Must be one of:
+            mp3_22050_32
+            mp3_44100_32
+            mp3_44100_64
+            mp3_44100_96
+            mp3_44100_128
+            mp3_44100_192
+            pcm_8000
+            pcm_16000
+            pcm_22050
+            pcm_24000
+            pcm_44100
+            ulaw_8000
+            alaw_8000
+            opus_48000_32
+            opus_48000_64
+            opus_48000_96
+            opus_48000_128
+            opus_48000_192
 
     Returns:
         Text content with the path to the output file and name of the voice used.
@@ -85,6 +106,8 @@ def text_to_speech(
     style: float = 0,
     use_speaker_boost: bool = True,
     speed: float = 1.0,
+    language: str = "en",
+    output_format: str = "mp3_44100_128",
 ):
     if text == "":
         make_error("Text is required.")
@@ -108,11 +131,13 @@ def text_to_speech(
     output_path = make_output_path(output_directory, base_path)
     output_file_name = make_output_file("tts", text, output_path, "mp3")
 
+    model_id = "eleven_flash_v2_5" if language in ["hu", "no", "vi"] else "eleven_multilingual_v2"
+
     audio_data = client.text_to_speech.convert(
         text=text,
         voice_id=voice_id,
-        model_id="eleven_multilingual_v2",
-        output_format="mp3_44100_128",
+        model_id=model_id,
+        output_format=output_format,
         voice_settings={
             "stability": stability,
             "similarity_boost": similarity_boost,
@@ -200,10 +225,33 @@ def speech_to_text(
         duration_seconds: Duration of the sound effect in seconds
         output_directory: Directory where files should be saved.
             Defaults to $HOME/Desktop if not provided.
+        output_format (str, optional): Output format of the generated audio. Formatted as codec_sample_rate_bitrate. So an mp3 with 22.05kHz sample rate at 32kbs is represented as mp3_22050_32. MP3 with 192kbps bitrate requires you to be subscribed to Creator tier or above. PCM with 44.1kHz sample rate requires you to be subscribed to Pro tier or above. Note that the μ-law format (sometimes written mu-law, often approximated as u-law) is commonly used for Twilio audio inputs.
+            Defaults to "mp3_44100_128". Must be one of:
+            mp3_22050_32
+            mp3_44100_32
+            mp3_44100_64
+            mp3_44100_96
+            mp3_44100_128
+            mp3_44100_192
+            pcm_8000
+            pcm_16000
+            pcm_22050
+            pcm_24000
+            pcm_44100
+            ulaw_8000
+            alaw_8000
+            opus_48000_32
+            opus_48000_64
+            opus_48000_96
+            opus_48000_128
+            opus_48000_192
     """
 )
 def text_to_sound_effects(
-    text: str, duration_seconds: float = 2.0, output_directory: str | None = None
+    text: str,
+    duration_seconds: float = 2.0,
+    output_directory: str | None = None,
+    output_format: str = "mp3_44100_128"
 ) -> list[TextContent]:
     if duration_seconds < 0.5 or duration_seconds > 5:
         make_error("Duration must be between 0.5 and 5 seconds")
@@ -212,7 +260,7 @@ def text_to_sound_effects(
 
     audio_data = client.text_to_sound_effects.convert(
         text=text,
-        output_format="mp3_44100_128",
+        output_format=output_format,
         duration_seconds=duration_seconds,
     )
     audio_bytes = b"".join(audio_data)
@@ -228,7 +276,7 @@ def text_to_sound_effects(
 
 @mcp.tool(
     description="""
-    Search for existing voices, a voice that has already been added to the user's ElevenLabs voice library. 
+    Search for existing voices, a voice that has already been added to the user's ElevenLabs voice library.
     Searches in name, description, labels and category.
 
     Args:
@@ -531,7 +579,7 @@ def speech_to_speech(
         audio_bytes = f.read()
 
     audio_data = client.speech_to_speech.convert(
-        model_id="eleven_english_sts_v2",
+        model_id="eleven_multilingual_sts_v2",
         voice_id=voice.voice_id,
         audio=audio_bytes,
     )
@@ -650,7 +698,7 @@ def make_outbound_call(
         page: Page number to return (0-indexed)
         page_size: Number of voices to return per page (1-100)
         search: Search term to filter voices by
-        
+
     Returns:
         TextContent containing information about the shared voices
     """
