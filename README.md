@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/elevenlabs-elevenlabs-mcp-badge.png)](https://mseep.ai/app/elevenlabs-elevenlabs-mcp)
+
 ![export](https://github.com/user-attachments/assets/ee379feb-348d-48e7-899c-134f7f7cd74f)
 
 <div class="title-block" style="text-align: center;" align="center">
