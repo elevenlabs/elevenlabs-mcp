@@ -690,8 +690,17 @@ def create_voice_from_preview(
     )
 
 
+def _get_phone_number_by_id(phone_number_id: str):
+    """Helper function to get phone number details by ID."""
+    phone_numbers = client.conversational_ai.phone_numbers.list()
+    for phone in phone_numbers:
+        if phone.phone_number_id == phone_number_id:
+            return phone
+    make_error(f"Phone number with ID {phone_number_id} not found.")
+
+
 @mcp.tool(
-    description="""Make an outbound call via Twilio using an ElevenLabs agent.
+    description="""Make an outbound call using an ElevenLabs agent. Automatically detects provider type (Twilio or SIP trunk) and uses the appropriate API.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
 
@@ -709,13 +718,27 @@ def make_outbound_call(
     agent_phone_number_id: str,
     to_number: str,
 ) -> TextContent:
-    response = client.conversational_ai.twilio.outbound_call(
-        agent_id=agent_id,
-        agent_phone_number_id=agent_phone_number_id,
-        to_number=to_number,
-    )
+    # Get phone number details to determine provider type
+    phone_number = _get_phone_number_by_id(agent_phone_number_id)
+    
+    if phone_number.provider.lower() == "twilio":
+        response = client.conversational_ai.twilio.outbound_call(
+            agent_id=agent_id,
+            agent_phone_number_id=agent_phone_number_id,
+            to_number=to_number,
+        )
+        provider_info = "Twilio"
+    elif phone_number.provider.lower() == "sip_trunk":
+        response = client.conversational_ai.sip_trunk.outbound_call(
+            agent_id=agent_id,
+            agent_phone_number_id=agent_phone_number_id,
+            to_number=to_number,
+        )
+        provider_info = "SIP trunk"
+    else:
+        make_error(f"Unsupported provider type: {phone_number.provider}")
 
-    return TextContent(type="text", text=f"Outbound call initiated: {response}.")
+    return TextContent(type="text", text=f"Outbound call initiated via {provider_info}: {response}.")
 
 
 @mcp.tool(

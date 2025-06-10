@@ -62,3 +62,14 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --cov=elevenlabs_mcp --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "fastmcp>=0.4.1",
+    "pre-commit>=3.6.2",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "twine>=6.1.0",
+]
