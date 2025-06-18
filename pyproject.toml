@@ -1,64 +1,68 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "elevenlabs-mcp"
-version = "0.4.0"
-description = "ElevenLabs MCP Server"
-authors = [
-    { name = "Jacek Duszenko", email = "jacek@elevenlabs.io" },
-    { name = "Paul Asjes", email = "paul.asjes@elevenlabs.io" },
-    { name = "Louis Jordan", email = "louis@elevenlabs.io" },
-    { name = "Luke Harries", email = "luke@elevenlabs.io" },
-]
+name = "elevenlabs-mcp-enhanced"
+version = "1.0.0"
+description = "Enhanced ElevenLabs MCP Server with configurable model selection"
+authors = [{name = "ElevenLabs", email = "devrel@elevenlabs.io"}]
 readme = "README.md"
-license = { file = "LICENSE" }
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-keywords = [
-    "elevenlabs",
-    "mcp",
-    "text-to-speech",
-    "speech-to-text",
-    "voice-cloning",
-]
-requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.6.0",
-    "fastapi==0.109.2",
-    "uvicorn==0.27.1",
-    "python-dotenv==1.0.1",
-    "pydantic>=2.6.1",
-    "httpx==0.28.1",
-    "elevenlabs>=2.1.0",
-    "fuzzywuzzy==0.18.0",
-    "python-Levenshtein>=0.25.0",
-    "sounddevice==0.5.1",
-    "soundfile==0.13.1",
+    "mcp>=1.0.0",
+    "elevenlabs~=2.3.0",
+    "httpx",
+    "python-dotenv",
 ]
-
-[project.scripts]
-elevenlabs-mcp = "elevenlabs_mcp.server:main"
 
 [project.optional-dependencies]
 dev = [
-    "pre-commit==3.6.2",
-    "ruff==0.3.0",
-    "fastmcp==0.4.1",
-    "pytest==8.0.0",
-    "pytest-cov==4.1.0",
-    "twine==6.1.0",
-    "build>=1.0.3",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+    "mypy",
 ]
 
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+[project.scripts]
+elevenlabs-mcp-enhanced = "elevenlabs_mcp:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]  # Line too long
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
 addopts = "-v --cov=elevenlabs_mcp --cov-report=term-missing"
+asyncio_mode = "auto"

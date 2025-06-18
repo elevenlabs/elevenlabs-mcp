@@ -14,25 +14,51 @@
   Official ElevenLabs <a href="https://github.com/modelcontextprotocol">Model Context Protocol (MCP)</a> server that enables interaction with powerful Text to Speech and audio processing APIs. This server allows MCP clients like <a href="https://www.anthropic.com/claude">Claude Desktop</a>, <a href="https://www.cursor.so">Cursor</a>, <a href="https://codeium.com/windsurf">Windsurf</a>, <a href="https://github.com/openai/openai-agents-python">OpenAI Agents</a> and others to generate speech, clone voices, transcribe audio, and more.
 </p>
 
+## Enhanced Features
+
+This fork adds **configurable TTS model selection** to the official ElevenLabs MCP server:
+
+- ✨ **Model Selection**: Choose any ElevenLabs TTS model via parameter or environment variable
+- 🔧 **Environment Configuration**: Set `ELEVENLABS_MODEL_ID` for deployment flexibility  
+- 🔄 **Backward Compatible**: Maintains all existing functionality without breaking changes
+- 📝 **Simple Enhancement**: Only 6 lines of code for significant functionality improvement
+
+### New Model Selection Options
+
+The `text_to_speech` function now supports these models via the `model_id` parameter:
+- `eleven_v3` - Most expressive model with audio tags support (70+ languages)
+- `eleven_multilingual_v2` - High quality multilingual model (29 languages) 
+- `eleven_flash_v2_5` - Fastest model with ultra-low latency (32 languages)
+- `eleven_turbo_v2_5` - Balanced quality and speed (32 languages)
+- `eleven_flash_v2` - Fast English-only model
+- `eleven_turbo_v2` - Balanced English-only model
+- `eleven_monolingual_v1` - Legacy English model
+
+### Configuration Options
+
+1. **Function Parameter**: Pass `model_id` directly to `text_to_speech`
+2. **Environment Variable**: Set `ELEVENLABS_MODEL_ID` in your environment
+3. **Fallback**: Uses original language-based selection as fallback
+
 ## Quickstart with Claude Desktop
 
 1. Get your API key from [ElevenLabs](https://elevenlabs.io/app/settings/api-keys). There is a free tier with 10k credits per month.
 2. Install `uv` (Python package manager), install with `curl -LsSf https://astral.sh/uv/install.sh | sh` or see the `uv` [repo](https://github.com/astral-sh/uv) for additional install methods.
 3. Go to Claude > Settings > Developer > Edit Config > claude_desktop_config.json to include the following:
 
-```
+```json
 {
   "mcpServers": {
     "ElevenLabs": {
       "command": "uvx",
       "args": ["elevenlabs-mcp"],
       "env": {
-        "ELEVENLABS_API_KEY": "<insert-your-api-key-here>"
+        "ELEVENLABS_API_KEY": "<insert-your-api-key-here>",
+        "ELEVENLABS_MODEL_ID": "eleven_v3"
       }
     }
   }
 }
-
 ```
 
 If you're using Windows, you will have to enable "Developer Mode" in Claude Desktop to use the MCP server. Click "Help" in the hamburger menu at the top left and select "Enable Developer Mode".
@@ -56,6 +82,7 @@ Try asking Claude:
 - "Convert this recording of my voice to sound like a medieval knight"
 - "Create a soundscape of a thunderstorm in a dense jungle with animals reacting to the weather"
 - "Turn this speech into text, identify different speakers, then convert it back using unique voices for each person"
+- "Use the eleven_v3 model for maximum expressiveness in this TTS generation"
 
 ## Optional features
 
@@ -121,6 +148,3 @@ which uvx
 ```
 
 Once you obtain the absolute path (e.g., `/usr/local/bin/uvx`), update your configuration to use that path (e.g., `"command": "/usr/local/bin/uvx"`). This ensures that the correct executable is referenced.
-
-
-
