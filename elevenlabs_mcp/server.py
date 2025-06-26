@@ -21,6 +21,11 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent
 from elevenlabs.client import ElevenLabs
+from elevenlabs.types import (
+    PromptAgentInputToolsItem_System,
+    SystemToolConfigInputParams_TransferToAgent,
+    AgentTransfer,
+)
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
     make_error,
@@ -419,6 +424,9 @@ def check_subscription() -> TextContent:
         max_duration_seconds: Maximum duration of a conversation in seconds. Defaults to 600 seconds (10 minutes).
         record_voice: Whether to record the agent's voice.
         retention_days: Number of days to retain the agent's data.
+        transfer_rules: List of transfer rules for agent-to-agent transfers. Each rule should contain:
+            - agent_id: The ID of the agent to transfer to
+            - condition: Natural language condition describing when to transfer
     """
 )
 def create_agent(
@@ -439,7 +447,51 @@ def create_agent(
     max_duration_seconds: int = 300,
     record_voice: bool = True,
     retention_days: int = 730,
+    transfer_rules: list[dict] | None = None,
 ) -> TextContent:
+    # Create tools list
+    tools = [{"type": "system", "name": "end_call", "description": ""}]
+    
+    # Add transfer_to_agent tool if transfer rules are provided
+    if transfer_rules:
+        # Convert transfer rules to AgentTransfer objects
+        agent_transfers = [
+            AgentTransfer(
+                agent_id=rule["agent_id"],
+                condition=rule["condition"]
+            )
+            for rule in transfer_rules
+        ]
+        
+        # Create the transfer tool
+        transfer_tool = PromptAgentInputToolsItem_System(
+            type="system",
+            name="transfer_to_agent",
+            description="Transfer the user to a specialized agent based on their request.",
+            params=SystemToolConfigInputParams_TransferToAgent(
+                transfers=agent_transfers
+            )
+        )
+        
+        # Convert to dict format for the API
+        transfer_tool_dict = {
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": transfer_tool.description,
+            "params": {
+                "system_tool_type": "transfer_to_agent",
+                "transfers": [
+                    {
+                        "agent_id": transfer.agent_id,
+                        "condition": transfer.condition
+                    }
+                    for transfer in agent_transfers
+                ]
+            }
+        }
+        
+        tools.append(transfer_tool_dict)
+    
     conversation_config = create_conversation_config(
         language=language,
         system_prompt=system_prompt,
@@ -455,6 +507,7 @@ def create_agent(
         similarity_boost=similarity_boost,
         turn_timeout=turn_timeout,
         max_duration_seconds=max_duration_seconds,
+        tools=tools,
     )
 
     platform_settings = create_platform_settings(
@@ -468,9 +521,13 @@ def create_agent(
         platform_settings=platform_settings,
     )
 
+    transfer_info = ""
+    if transfer_rules:
+        transfer_info = f", Transfer Rules: {len(transfer_rules)} agent(s) configured for transfers"
+    
     return TextContent(
         type="text",
-        text=f"""Agent created successfully: Name: {name}, Agent ID: {response.agent_id}, System Prompt: {system_prompt}, Voice ID: {voice_id or "Default"}, Language: {language}, LLM: {llm}, You can use this agent ID for future interactions with the agent.""",
+        text=f"""Agent created successfully: Name: {name}, Agent ID: {response.agent_id}, System Prompt: {system_prompt}, Voice ID: {voice_id or "Default"}, Language: {language}, LLM: {llm}{transfer_info}, You can use this agent ID for future interactions with the agent.""",
     )
 
 
