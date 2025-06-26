@@ -689,74 +689,11 @@ def update_agent_with_tools(
     # Get the current agent configuration
     agent = client.conversational_ai.agents.get(agent_id=agent_id)
     
-    # Extract current conversation config
-    conversation_config = agent.conversation_config
+    # Extract current conversation config and convert to dict
+    current_config = agent.conversation_config
+    config_dict = current_config.model_dump() if hasattr(current_config, 'model_dump') else current_config.__dict__
     
-    # Initialize built_in_tools if it doesn't exist
-    if not hasattr(conversation_config.agent.prompt, 'built_in_tools'):
-        conversation_config.agent.prompt.built_in_tools = {}
-    
-    # Update built_in_tools based on parameters
-    built_in_tools = {}
-    
-    # End call tool (usually always enabled)
-    if enable_end_call:
-        built_in_tools["end_call"] = {
-            "name": "end_call",
-            "description": "",
-            "response_timeout_secs": 20,
-            "type": "system",
-            "params": {
-                "system_tool_type": "end_call"
-            }
-        }
-    else:
-        built_in_tools["end_call"] = None
-    
-    # Transfer to agent tool
-    if enable_transfer_to_agent and transfer_rules:
-        built_in_tools["transfer_to_agent"] = {
-            "name": "transfer_to_agent",
-            "description": "",
-            "response_timeout_secs": 20,
-            "type": "system",
-            "params": {
-                "system_tool_type": "transfer_to_agent",
-                "transfers": [
-                    {
-                        "agent_id": rule["agent_id"],
-                        "condition": rule["condition"]
-                    }
-                    for rule in transfer_rules
-                ]
-            }
-        }
-    else:
-        built_in_tools["transfer_to_agent"] = None
-    
-    # Language detection tool
-    if enable_language_detection:
-        built_in_tools["language_detection"] = {
-            "name": "language_detection",
-            "description": "",
-            "response_timeout_secs": 20,
-            "type": "system",
-            "params": {
-                "system_tool_type": "language_detection"
-            }
-        }
-    else:
-        built_in_tools["language_detection"] = None
-    
-    # Set other tools to None by default if not specified
-    built_in_tools.setdefault("transfer_to_number", None)
-    built_in_tools.setdefault("skip_turn", None)
-    built_in_tools.setdefault("play_keypad_touch_tone", None)
-    
-    # Update the conversation config with new built_in_tools
-    conversation_config.agent.prompt.built_in_tools = built_in_tools
-    
-    # Also update the tools array to match
+    # Build the tools array
     tools = []
     if enable_end_call:
         tools.append({
@@ -794,12 +731,33 @@ def update_agent_with_tools(
             "params": {"system_tool_type": "language_detection"}
         })
     
-    conversation_config.agent.prompt.tools = tools
+    # Update the tools in the config dict
+    config_dict['agent']['prompt']['tools'] = tools
+    
+    # Create a new conversation config with the updated data
+    # We'll use the create_conversation_config helper to ensure proper structure
+    new_config = create_conversation_config(
+        language=config_dict['agent']['language'],
+        system_prompt=config_dict['agent']['prompt']['prompt'],
+        llm=config_dict['agent']['prompt']['llm'],
+        first_message=config_dict['agent']['first_message'],
+        temperature=config_dict['agent']['prompt']['temperature'],
+        max_tokens=config_dict['agent']['prompt'].get('max_tokens', -1),
+        asr_quality=config_dict['asr'].get('quality', 'high'),
+        voice_id=config_dict['tts']['voice_id'],
+        model_id=config_dict['tts']['model_id'],
+        optimize_streaming_latency=config_dict['tts'].get('optimize_streaming_latency', 3),
+        stability=config_dict['tts'].get('stability', 0.5),
+        similarity_boost=config_dict['tts'].get('similarity_boost', 0.8),
+        turn_timeout=config_dict['turn'].get('turn_timeout', 7),
+        max_duration_seconds=config_dict['conversation'].get('max_duration_seconds', 300),
+        tools=tools,
+    )
     
     # Update the agent
     client.conversational_ai.agents.update(
         agent_id=agent_id,
-        conversation_config=conversation_config
+        conversation_config=new_config
     )
     
     # Prepare status message
