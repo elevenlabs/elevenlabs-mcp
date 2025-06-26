@@ -640,6 +640,32 @@ def get_agent(agent_id: str) -> TextContent:
     )
 
 
+@mcp.tool(description="Get the conversation configuration of a specific conversational AI agent")
+def get_agent_config(agent_id: str) -> TextContent:
+    """Get the conversation configuration of a specific conversational AI agent.
+
+    Args:
+        agent_id: The ID of the agent to retrieve configuration for
+
+    Returns:
+        TextContent with the full conversation configuration in JSON format
+    """
+    import json
+    
+    response = client.conversational_ai.agents.get(agent_id=agent_id)
+    
+    # Extract the conversation config
+    config = response.conversation_config
+    
+    # Convert to dict for JSON serialization
+    config_dict = config.model_dump() if hasattr(config, 'model_dump') else config.__dict__
+    
+    return TextContent(
+        type="text",
+        text=json.dumps(config_dict, indent=2)
+    )
+
+
 @mcp.tool(
     description="""Gets conversation with transcript. Returns: conversation details and full transcript. Use when: analyzing completed agent conversations.
     
