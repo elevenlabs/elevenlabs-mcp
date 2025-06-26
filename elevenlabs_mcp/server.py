@@ -666,6 +666,157 @@ def get_agent_config(agent_id: str) -> TextContent:
     )
 
 
+@mcp.tool(description="Update an existing conversational AI agent's configuration, including built-in tools")
+def update_agent_with_tools(
+    agent_id: str,
+    enable_transfer_to_agent: bool = False,
+    transfer_rules: list[dict] | None = None,
+    enable_language_detection: bool = False,
+    enable_end_call: bool = True,
+) -> TextContent:
+    """Update an existing agent's built-in tools configuration.
+    
+    Args:
+        agent_id: The ID of the agent to update
+        enable_transfer_to_agent: Whether to enable the transfer_to_agent tool
+        transfer_rules: List of transfer rules if enabling transfer_to_agent
+        enable_language_detection: Whether to enable language detection
+        enable_end_call: Whether to enable the end_call tool (default True)
+    
+    Returns:
+        TextContent with update status
+    """
+    # Get the current agent configuration
+    agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    
+    # Extract current conversation config
+    conversation_config = agent.conversation_config
+    
+    # Initialize built_in_tools if it doesn't exist
+    if not hasattr(conversation_config.agent.prompt, 'built_in_tools'):
+        conversation_config.agent.prompt.built_in_tools = {}
+    
+    # Update built_in_tools based on parameters
+    built_in_tools = {}
+    
+    # End call tool (usually always enabled)
+    if enable_end_call:
+        built_in_tools["end_call"] = {
+            "name": "end_call",
+            "description": "",
+            "response_timeout_secs": 20,
+            "type": "system",
+            "params": {
+                "system_tool_type": "end_call"
+            }
+        }
+    else:
+        built_in_tools["end_call"] = None
+    
+    # Transfer to agent tool
+    if enable_transfer_to_agent and transfer_rules:
+        built_in_tools["transfer_to_agent"] = {
+            "name": "transfer_to_agent",
+            "description": "",
+            "response_timeout_secs": 20,
+            "type": "system",
+            "params": {
+                "system_tool_type": "transfer_to_agent",
+                "transfers": [
+                    {
+                        "agent_id": rule["agent_id"],
+                        "condition": rule["condition"]
+                    }
+                    for rule in transfer_rules
+                ]
+            }
+        }
+    else:
+        built_in_tools["transfer_to_agent"] = None
+    
+    # Language detection tool
+    if enable_language_detection:
+        built_in_tools["language_detection"] = {
+            "name": "language_detection",
+            "description": "",
+            "response_timeout_secs": 20,
+            "type": "system",
+            "params": {
+                "system_tool_type": "language_detection"
+            }
+        }
+    else:
+        built_in_tools["language_detection"] = None
+    
+    # Set other tools to None by default if not specified
+    built_in_tools.setdefault("transfer_to_number", None)
+    built_in_tools.setdefault("skip_turn", None)
+    built_in_tools.setdefault("play_keypad_touch_tone", None)
+    
+    # Update the conversation config with new built_in_tools
+    conversation_config.agent.prompt.built_in_tools = built_in_tools
+    
+    # Also update the tools array to match
+    tools = []
+    if enable_end_call:
+        tools.append({
+            "type": "system",
+            "name": "end_call",
+            "description": "",
+            "response_timeout_secs": 20,
+            "params": {"system_tool_type": "end_call"}
+        })
+    
+    if enable_transfer_to_agent and transfer_rules:
+        tools.append({
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": "",
+            "response_timeout_secs": 20,
+            "params": {
+                "system_tool_type": "transfer_to_agent",
+                "transfers": [
+                    {
+                        "agent_id": rule["agent_id"],
+                        "condition": rule["condition"]
+                    }
+                    for rule in transfer_rules
+                ]
+            }
+        })
+    
+    if enable_language_detection:
+        tools.append({
+            "type": "system",
+            "name": "language_detection",
+            "description": "",
+            "response_timeout_secs": 20,
+            "params": {"system_tool_type": "language_detection"}
+        })
+    
+    conversation_config.agent.prompt.tools = tools
+    
+    # Update the agent
+    client.conversational_ai.agents.update(
+        agent_id=agent_id,
+        conversation_config=conversation_config
+    )
+    
+    # Prepare status message
+    enabled_tools = []
+    if enable_end_call:
+        enabled_tools.append("end_call")
+    if enable_transfer_to_agent:
+        enabled_tools.append(f"transfer_to_agent ({len(transfer_rules)} rules)")
+    if enable_language_detection:
+        enabled_tools.append("language_detection")
+    
+    return TextContent(
+        type="text",
+        text=f"Agent {agent_id} updated successfully. Enabled built-in tools: {', '.join(enabled_tools) if enabled_tools else 'None'}"
+    )
+
+
 @mcp.tool(
     description="""Gets conversation with transcript. Returns: conversation details and full transcript. Use when: analyzing completed agent conversations.
     
