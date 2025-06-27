@@ -64,7 +64,6 @@ mcp = FastMCP("ElevenLabs")
         text (str): The text to convert to speech.
         voice_name (str, optional): The name of the voice to use.
         model_id (str, optional): The model ID to use for speech synthesis. Options include:
-            - eleven_v3: Most expressive model with audio tags support (70+ languages)
             - eleven_multilingual_v2: High quality multilingual model (29 languages)
             - eleven_flash_v2_5: Fastest model with ultra-low latency (32 languages)
             - eleven_turbo_v2_5: Balanced quality and speed (32 languages)
@@ -125,6 +124,13 @@ def text_to_speech(
     if voice_id is not None and voice_name is not None:
         make_error("voice_id and voice_name cannot both be provided.")
 
+    # Model selection logic: use provided model_id, environment variable, or default
+    if model_id is None:
+        model_id = os.getenv("ELEVENLABS_MODEL_ID")
+        if model_id is None:
+            # Original logic as fallback
+            model_id = "eleven_flash_v2_5" if language in ["hu", "no", "vi"] else "eleven_multilingual_v2"
+
     voice = None
     if voice_id is not None:
         voice = client.voices.get(voice_id=voice_id)
@@ -140,13 +146,6 @@ def text_to_speech(
 
     output_path = make_output_path(output_directory, base_path)
     output_file_name = make_output_file("tts", text, output_path, "mp3")
-
-    # Model selection logic: use provided model_id, environment variable, or default
-    if model_id is None:
-        model_id = os.getenv("ELEVENLABS_MODEL_ID")
-        if model_id is None:
-            # Original logic as fallback
-            model_id = "eleven_flash_v2_5" if language in ["hu", "no", "vi"] else "eleven_multilingual_v2"
 
     audio_data = client.text_to_speech.convert(
         text=text,
