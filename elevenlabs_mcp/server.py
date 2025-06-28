@@ -559,6 +559,8 @@ def add_knowledge_base_to_agent(
     if len(provided_params) > 1:
         make_error("Must provide exactly one of: URL, file, or text")
 
+    is_file_based = url is None
+
     if url is not None:
         response = client.conversational_ai.knowledge_base.documents.create_from_url(
             name=knowledge_base_name,
@@ -585,7 +587,7 @@ def add_knowledge_base_to_agent(
     agent = client.conversational_ai.agents.get(agent_id=agent_id)
     agent.conversation_config.agent.prompt.knowledge_base.append(
         KnowledgeBaseLocator(
-            type="file" if file else "url",
+            type="file" if is_file_based else "url",
             name=knowledge_base_name,
             id=response.id,
         )
