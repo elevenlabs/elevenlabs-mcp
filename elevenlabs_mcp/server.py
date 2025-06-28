@@ -1152,6 +1152,31 @@ def play_audio(input_file_path: str) -> TextContent:
     return TextContent(type="text", text=f"Successfully played audio file: {file_path}")
 
 
+@mcp.tool(description="Get information about the ElevenLabs MCP server project")
+def get_info() -> TextContent:
+    """Get information about the ElevenLabs MCP server project location and version.
+    
+    Returns:
+        TextContent with project information including disk location and version
+    """
+    import pathlib
+    
+    # Get the project root directory (where server.py is located)
+    project_root = pathlib.Path(__file__).parent.absolute()
+    
+    # Get the parent directory which should be the package root
+    package_root = project_root.parent.absolute()
+    
+    info = f"""ElevenLabs MCP Server Information:
+Project Location: {project_root}
+Package Root: {package_root}
+Version: {__version__}
+Base Path (ELEVENLABS_MCP_BASE_PATH): {base_path or 'Not set (using Desktop)'}
+API Key Configured: {'Yes' if api_key else 'No'}"""
+    
+    return TextContent(type="text", text=info)
+
+
 def main():
     print("Starting MCP server")
     """Run the MCP server"""
