@@ -39,7 +39,7 @@ from elevenlabs_mcp import __version__
 load_dotenv()
 api_key = os.getenv("ELEVENLABS_API_KEY")
 base_path = os.getenv("ELEVENLABS_MCP_BASE_PATH")
-DEFAULT_VOICE_ID = "cgSgspJ2msm6clMCkdW9"
+DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
 
 if not api_key:
     raise ValueError("ELEVENLABS_API_KEY environment variable is required")
