@@ -19,7 +19,11 @@ from io import BytesIO
 from typing import Literal
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from mcp.types import TextContent
+from mcp.types import (
+    TextContent,
+    Resource,
+    EmbeddedResource,
+)
 from elevenlabs.client import ElevenLabs
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
@@ -29,6 +33,10 @@ from elevenlabs_mcp.utils import (
     handle_input_file,
     parse_conversation_transcript,
     handle_large_text,
+    get_mime_type,
+    handle_output_mode,
+    handle_multiple_files_output_mode,
+    get_output_mode_description,
 )
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
 from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
@@ -39,6 +47,7 @@ from elevenlabs_mcp import __version__
 load_dotenv()
 api_key = os.getenv("ELEVENLABS_API_KEY")
 base_path = os.getenv("ELEVENLABS_MCP_BASE_PATH")
+output_mode = os.getenv("ELEVENLABS_MCP_OUTPUT_MODE", "files")
 DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
 
 if not api_key:
@@ -55,9 +64,45 @@ client = ElevenLabs(api_key=api_key, httpx_client=custom_client)
 mcp = FastMCP("ElevenLabs")
 
 
+@mcp.resource("elevenlabs://{filename}")
+def get_elevenlabs_resource(filename: str) -> Resource:
+    """
+    Resource handler for ElevenLabs generated files.
+    """
+    # Construct the file path
+    output_path = make_output_path(None, base_path)
+    file_path = output_path / filename
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"Resource file not found: {filename}")
+
+    # Read the file and determine MIME type
+    with open(file_path, "rb") as f:
+        file_data = f.read()
+
+    file_extension = file_path.suffix.lstrip(".")
+    mime_type = get_mime_type(file_extension)
+
+    # For text files, return text content
+    if mime_type.startswith("text/"):
+        try:
+            text_content = file_data.decode("utf-8")
+            return Resource(
+                uri=f"elevenlabs://{filename}", mimeType=mime_type, text=text_content
+            )
+        except UnicodeDecodeError:
+            pass
+
+    # For binary files, return base64 encoded data
+    base64_data = base64.b64encode(file_data).decode("utf-8")
+    return Resource(
+        uri=f"elevenlabs://{filename}", mimeType=mime_type, data=base64_data
+    )
+
+
 @mcp.tool(
-    description="""Convert text to speech with a given voice and save the output audio file to a given directory.
-    Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
+    description=f"""Convert text to speech with a given voice. {get_output_mode_description(output_mode)}.
+    
     Only one of voice_id or voice_name can be provided. If none are provided, the default voice will be used.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -78,7 +123,7 @@ mcp = FastMCP("ElevenLabs")
         style (float, optional): Style of the generated audio. Determines the style exaggeration of the voice. This setting attempts to amplify the style of the original speaker. It does consume additional computational resources and might increase latency if set to anything other than 0. Range is 0 to 1.
         use_speaker_boost (bool, optional): Use speaker boost of the generated audio. This setting boosts the similarity to the original speaker. Using this setting requires a slightly higher computational load, which in turn increases latency.
         speed (float, optional): Speed of the generated audio. Controls the speed of the generated speech. Values range from 0.7 to 1.2, with 1.0 being the default speed. Lower values create slower, more deliberate speech while higher values produce faster-paced speech. Extreme values can impact the quality of the generated speech. Range is 0.7 to 1.2.
-        output_directory (str, optional): Directory where files should be saved.
+        output_directory (str, optional): Directory where files should be saved (only used when saving files).
             Defaults to $HOME/Desktop if not provided.
         language: ISO 639-1 language code for the voice.
         output_format (str, optional): Output format of the generated audio. Formatted as codec_sample_rate_bitrate. So an mp3 with 22.05kHz sample rate at 32kbs is represented as mp3_22050_32. MP3 with 192kbps bitrate requires you to be subscribed to Creator tier or above. PCM with 44.1kHz sample rate requires you to be subscribed to Pro tier or above. Note that the μ-law format (sometimes written mu-law, often approximated as u-law) is commonly used for Twilio audio inputs.
@@ -103,7 +148,7 @@ mcp = FastMCP("ElevenLabs")
             opus_48000_192
 
     Returns:
-        Text content with the path to the output file and name of the voice used.
+        Text content with file path or MCP resource with audio data, depending on output mode.
     """
 )
 def text_to_speech(
@@ -164,18 +209,15 @@ def text_to_speech(
     )
     audio_bytes = b"".join(audio_data)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path / output_file_name, "wb") as f:
-        f.write(audio_bytes)
-
-    return TextContent(
-        type="text",
-        text=f"Success. File saved as: {output_path / output_file_name}. Voice used: {voice.name if voice else DEFAULT_VOICE_ID}",
+    # Handle different output modes
+    success_message = f"Success. File saved as: {{file_path}}. Voice used: {voice.name if voice else DEFAULT_VOICE_ID}"
+    return handle_output_mode(
+        audio_bytes, output_path, output_file_name, output_mode, success_message
     )
 
 
 @mcp.tool(
-    description="""Transcribe speech from an audio file and either save the output text file to a given directory or return the text to the client directly.
+    description=f"""Transcribe speech from an audio file. When save_transcript_to_file=True: {get_output_mode_description(output_mode)}. When return_transcript_to_client_directly=True, always returns text directly regardless of output mode.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
 
@@ -185,11 +227,11 @@ def text_to_speech(
         diarize: Whether to diarize the audio file. If True, which speaker is currently speaking will be annotated in the transcription.
         save_transcript_to_file: Whether to save the transcript to a file.
         return_transcript_to_client_directly: Whether to return the transcript to the client directly.
-        output_directory: Directory where files should be saved.
+        output_directory: Directory where files should be saved (only used when saving files).
             Defaults to $HOME/Desktop if not provided.
 
     Returns:
-        TextContent containing the transcription. If save_transcript_to_file is True, the transcription will be saved to a file in the output directory.
+        TextContent containing the transcription or MCP resource with transcript data.
     """
 )
 def speech_to_text(
@@ -217,21 +259,29 @@ def speech_to_text(
         tag_audio_events=True,
     )
 
-    if save_transcript_to_file:
-        with open(output_path / output_file_name, "w") as f:
-            f.write(transcription.text)
-
     if return_transcript_to_client_directly:
         return TextContent(type="text", text=transcription.text)
-    else:
-        return TextContent(
-            type="text", text=f"Transcription saved to {output_path / output_file_name}"
+
+    if save_transcript_to_file:
+        transcript_bytes = transcription.text.encode("utf-8")
+
+        # Handle different output modes
+        success_message = "Transcription saved to {file_path}"
+        return handle_output_mode(
+            transcript_bytes,
+            output_path,
+            output_file_name,
+            output_mode,
+            success_message,
         )
+
+    # This should not be reached due to validation at the start of the function
+    return TextContent(type="text", text="No output mode specified")
 
 
 @mcp.tool(
-    description="""Convert text description of a sound effect to sound effect with a given duration and save the output audio file to a given directory.
-    Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
+    description=f"""Convert text description of a sound effect to sound effect with a given duration. {get_output_mode_description(output_mode)}.
+    
     Duration must be between 0.5 and 5 seconds.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -239,7 +289,7 @@ def speech_to_text(
     Args:
         text: Text description of the sound effect
         duration_seconds: Duration of the sound effect in seconds
-        output_directory: Directory where files should be saved.
+        output_directory: Directory where files should be saved (only used when saving files).
             Defaults to $HOME/Desktop if not provided.
         output_format (str, optional): Output format of the generated audio. Formatted as codec_sample_rate_bitrate. So an mp3 with 22.05kHz sample rate at 32kbs is represented as mp3_22050_32. MP3 with 192kbps bitrate requires you to be subscribed to Creator tier or above. PCM with 44.1kHz sample rate requires you to be subscribed to Pro tier or above. Note that the μ-law format (sometimes written mu-law, often approximated as u-law) is commonly used for Twilio audio inputs.
             Defaults to "mp3_44100_128". Must be one of:
@@ -281,13 +331,8 @@ def text_to_sound_effects(
     )
     audio_bytes = b"".join(audio_data)
 
-    with open(output_path / output_file_name, "wb") as f:
-        f.write(audio_bytes)
-
-    return TextContent(
-        type="text",
-        text=f"Success. File saved as: {output_path / output_file_name}",
-    )
+    # Handle different output modes
+    return handle_output_mode(audio_bytes, output_path, output_file_name, output_mode)
 
 
 @mcp.tool(
@@ -370,8 +415,7 @@ def voice_clone(
 
 
 @mcp.tool(
-    description="""Isolate audio from a file and save the output audio file to a given directory.
-    Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
+    description=f"""Isolate audio from a file. {get_output_mode_description(output_mode)}.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
     """
@@ -389,13 +433,8 @@ def isolate_audio(
     )
     audio_bytes = b"".join(audio_data)
 
-    with open(output_path / output_file_name, "wb") as f:
-        f.write(audio_bytes)
-
-    return TextContent(
-        type="text",
-        text=f"Success. File saved as: {output_path / output_file_name}",
-    )
+    # Handle different output modes
+    return handle_output_mode(audio_bytes, output_path, output_file_name, output_mode)
 
 
 @mcp.tool(
@@ -733,7 +772,7 @@ Call Successful: {conv.call_successful}"""
 
 
 @mcp.tool(
-    description="""Transform audio from one voice to another using provided audio files.
+    description=f"""Transform audio from one voice to another using provided audio files. {get_output_mode_description(output_mode)}.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
     """
@@ -769,16 +808,14 @@ def speech_to_speech(
 
     audio_bytes = b"".join(audio_data)
 
-    with open(output_path / output_file_name, "wb") as f:
-        f.write(audio_bytes)
-
-    return TextContent(
-        type="text", text=f"Success. File saved as: {output_path / output_file_name}"
-    )
+    # Handle different output modes
+    return handle_output_mode(audio_bytes, output_path, output_file_name, output_mode)
 
 
 @mcp.tool(
-    description="""Create voice previews from a text prompt. Creates three previews with slight variations. Saves the previews to a given directory. If no text is provided, the tool will auto-generate text.
+    description=f"""Create voice previews from a text prompt. Creates three previews with slight variations. {get_output_mode_description(output_mode)}.
+    
+    If no text is provided, the tool will auto-generate text.
 
     Voice preview files are saved as: voice_design_(generated_voice_id)_(timestamp).mp3
 
@@ -791,7 +828,7 @@ def text_to_voice(
     voice_description: str,
     text: str | None = None,
     output_directory: str | None = None,
-) -> TextContent:
+) -> list[EmbeddedResource] | TextContent:
     if voice_description == "":
         make_error("Voice description is required.")
 
@@ -804,23 +841,24 @@ def text_to_voice(
     output_path = make_output_path(output_directory, base_path)
 
     generated_voice_ids = []
-    output_file_paths = []
+    results = []
 
     for preview in previews.previews:
         output_file_name = make_output_file(
             "voice_design", preview.generated_voice_id, output_path, "mp3", full_id=True
         )
-        output_file_paths.append(str(output_file_name))
         generated_voice_ids.append(preview.generated_voice_id)
         audio_bytes = base64.b64decode(preview.audio_base_64)
 
-        with open(output_path / output_file_name, "wb") as f:
-            f.write(audio_bytes)
+        # Handle different output modes
+        result = handle_output_mode(
+            audio_bytes, output_path, output_file_name, output_mode
+        )
+        results.append(result)
 
-    return TextContent(
-        type="text",
-        text=f"Success. Files saved at: {', '.join(output_file_paths)}. Generated voice IDs are: {', '.join(generated_voice_ids)}",
-    )
+    # Use centralized multiple files output handling
+    additional_info = f"Generated voice IDs are: {', '.join(generated_voice_ids)}"
+    return handle_multiple_files_output_mode(results, output_mode, additional_info)
 
 
 @mcp.tool(

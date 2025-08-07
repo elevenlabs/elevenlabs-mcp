@@ -59,7 +59,51 @@ Try asking Claude:
 
 ## Optional features
 
-You can add the `ELEVENLABS_MCP_BASE_PATH` environment variable to the `claude_desktop_config.json` to specify the base path MCP server should look for and output files specified with relative paths.
+### File Output Configuration
+
+You can configure how the MCP server handles file outputs using these environment variables in your `claude_desktop_config.json`:
+
+- **`ELEVENLABS_MCP_BASE_PATH`**: Specify the base path for file operations with relative paths (default: `~/Desktop`)
+- **`ELEVENLABS_MCP_OUTPUT_MODE`**: Control how generated files are returned (default: `files`)
+
+#### Output Modes
+
+The `ELEVENLABS_MCP_OUTPUT_MODE` environment variable supports three modes:
+
+1. **`files`** (default): Save files to disk and return file paths
+   ```json
+   "env": {
+     "ELEVENLABS_API_KEY": "your-api-key",
+     "ELEVENLABS_MCP_OUTPUT_MODE": "files"
+   }
+   ```
+
+2. **`resources`**: Return files as base64-encoded MCP resources without saving to disk
+   ```json
+   "env": {
+     "ELEVENLABS_API_KEY": "your-api-key",
+     "ELEVENLABS_MCP_OUTPUT_MODE": "resources"
+   }
+   ```
+
+3. **`both`**: Save files to disk AND return as MCP resources
+   ```json
+   "env": {
+     "ELEVENLABS_API_KEY": "your-api-key",
+     "ELEVENLABS_MCP_OUTPUT_MODE": "both"
+   }
+   ```
+
+**Resource Mode Benefits:**
+- Files are returned directly in the MCP response as base64-encoded data
+- No disk I/O required - useful for containerized or serverless environments
+- MCP clients can access file content immediately without file system access
+- In `both` mode, resources can be fetched later using the `elevenlabs://filename` URI pattern
+
+**Use Cases:**
+- `files`: Traditional file-based workflows, local development
+- `resources`: Cloud environments, MCP clients without file system access
+- `both`: Maximum flexibility, caching, and resource sharing scenarios
 
 ## Contributing
 
