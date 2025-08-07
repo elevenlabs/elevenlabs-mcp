@@ -16,7 +16,7 @@ import os
 import base64
 from datetime import datetime
 from io import BytesIO
-from typing import Literal
+from typing import Literal, Union
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.types import (
@@ -164,7 +164,7 @@ def text_to_speech(
     language: str = "en",
     output_format: str = "mp3_44100_128",
     model_id: str | None = None,
-):
+) -> Union[TextContent, EmbeddedResource]:
     if text == "":
         make_error("Text is required.")
 
@@ -318,7 +318,7 @@ def text_to_sound_effects(
     duration_seconds: float = 2.0,
     output_directory: str | None = None,
     output_format: str = "mp3_44100_128",
-) -> list[TextContent]:
+) -> Union[TextContent, EmbeddedResource]:
     if duration_seconds < 0.5 or duration_seconds > 5:
         make_error("Duration must be between 0.5 and 5 seconds")
     output_path = make_output_path(output_directory, base_path)
@@ -422,7 +422,7 @@ def voice_clone(
 )
 def isolate_audio(
     input_file_path: str, output_directory: str | None = None
-) -> list[TextContent]:
+) -> Union[TextContent, EmbeddedResource]:
     file_path = handle_input_file(input_file_path)
     output_path = make_output_path(output_directory, base_path)
     output_file_name = make_output_file("iso", file_path.name, output_path, "mp3")
@@ -781,7 +781,7 @@ def speech_to_speech(
     input_file_path: str,
     voice_name: str = "Adam",
     output_directory: str | None = None,
-) -> TextContent:
+) -> Union[TextContent, EmbeddedResource]:
     voices = client.voices.search(search=voice_name)
 
     if len(voices.voices) == 0:
