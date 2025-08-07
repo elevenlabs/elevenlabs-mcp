@@ -1,8 +1,16 @@
 import os
 import tempfile
+import base64
 from pathlib import Path
 from datetime import datetime
 from fuzzywuzzy import fuzz
+from typing import Union
+from mcp.types import (
+    EmbeddedResource,
+    TextResourceContents,
+    BlobResourceContents,
+    TextContent,
+)
 
 
 class ElevenLabsMcpError(Exception):
@@ -211,3 +219,217 @@ def parse_conversation_transcript(transcript_entries, max_length: int = 50000):
         )
 
     return transcript, False
+
+
+def get_mime_type(file_extension: str) -> str:
+    """
+    Get MIME type for a given file extension.
+
+    Args:
+        file_extension: File extension (with or without dot)
+
+    Returns:
+        str: MIME type string
+    """
+    # Remove leading dot if present
+    ext = file_extension.lstrip(".")
+
+    mime_types = {
+        "mp3": "audio/mpeg",
+        "wav": "audio/wav",
+        "ogg": "audio/ogg",
+        "flac": "audio/flac",
+        "m4a": "audio/mp4",
+        "aac": "audio/aac",
+        "opus": "audio/opus",
+        "txt": "text/plain",
+        "json": "application/json",
+        "xml": "application/xml",
+        "html": "text/html",
+        "csv": "text/csv",
+    }
+
+    return mime_types.get(ext.lower(), "application/octet-stream")
+
+
+def generate_resource_uri(filename: str) -> str:
+    """
+    Generate a resource URI for a given filename.
+
+    Args:
+        filename: The filename to generate URI for
+
+    Returns:
+        str: Resource URI in format elevenlabs://filename
+    """
+    return f"elevenlabs://{filename}"
+
+
+def create_resource_response(
+    file_data: bytes, filename: str, file_extension: str
+) -> EmbeddedResource:
+    """
+    Create a proper MCP EmbeddedResource response.
+
+    Args:
+        file_data: Raw file data as bytes
+        filename: Name of the file
+        file_extension: File extension for MIME type detection
+
+    Returns:
+        EmbeddedResource: Proper MCP resource object
+    """
+    mime_type = get_mime_type(file_extension)
+    resource_uri = generate_resource_uri(filename)
+
+    # For text files, use TextResourceContents
+    if mime_type.startswith("text/"):
+        try:
+            text_content = file_data.decode("utf-8")
+            return EmbeddedResource(
+                type="resource",
+                resource=TextResourceContents(
+                    uri=resource_uri, mimeType=mime_type, text=text_content
+                ),
+            )
+        except UnicodeDecodeError:
+            # Fall back to binary if decode fails
+            pass
+
+    # For binary files (audio, etc.), use BlobResourceContents
+    base64_data = base64.b64encode(file_data).decode("utf-8")
+    return EmbeddedResource(
+        type="resource",
+        resource=BlobResourceContents(
+            uri=resource_uri, mimeType=mime_type, blob=base64_data
+        ),
+    )
+
+
+def handle_output_mode(
+    file_data: bytes,
+    output_path: Path,
+    filename: str,
+    output_mode: str,
+    success_message: str = None,
+) -> Union[TextContent, EmbeddedResource]:
+    """
+    Handle different output modes for file generation.
+
+    Args:
+        file_data: Raw file data as bytes
+        output_path: Path where file should be saved
+        filename: Name of the file
+        output_mode: Output mode ('files', 'resources', or 'both')
+        success_message: Custom success message for files mode (optional)
+
+    Returns:
+        Union[TextContent, EmbeddedResource]: TextContent for 'files' mode,
+                                            EmbeddedResource for 'resources' and 'both' modes
+    """
+    file_extension = Path(filename).suffix.lstrip(".")
+    full_file_path = output_path / filename
+
+    if output_mode == "files":
+        # Save to disk and return TextContent with success message
+        output_path.mkdir(parents=True, exist_ok=True)
+        with open(full_file_path, "wb") as f:
+            f.write(file_data)
+
+        if success_message and "{file_path}" in success_message:
+            message = success_message.replace("{file_path}", str(full_file_path))
+        else:
+            message = success_message or f"Success. File saved as: {full_file_path}"
+        return TextContent(type="text", text=message)
+
+    elif output_mode == "resources":
+        # Return as EmbeddedResource without saving to disk
+        return create_resource_response(file_data, filename, file_extension)
+
+    elif output_mode == "both":
+        # Save to disk AND return as EmbeddedResource
+        output_path.mkdir(parents=True, exist_ok=True)
+        with open(full_file_path, "wb") as f:
+            f.write(file_data)
+        return create_resource_response(file_data, filename, file_extension)
+
+    else:
+        raise ValueError(
+            f"Invalid output mode: {output_mode}. Must be 'files', 'resources', or 'both'"
+        )
+
+
+def handle_multiple_files_output_mode(
+    results: list[Union[TextContent, EmbeddedResource]],
+    output_mode: str,
+    additional_info: str = None,
+) -> Union[TextContent, list[EmbeddedResource]]:
+    """
+    Handle different output modes for multiple file generation.
+
+    Args:
+        results: List of results from handle_output_mode calls
+        output_mode: Output mode ('files', 'resources', or 'both')
+        additional_info: Additional information to include in files mode message
+
+    Returns:
+        Union[TextContent, list[EmbeddedResource]]: TextContent for 'files' mode,
+                                                   list of EmbeddedResource for 'resources' and 'both' modes
+    """
+    if output_mode == "files":
+        # Extract file paths from TextContent objects and create combined message
+        file_paths = []
+        for result in results:
+            if isinstance(result, TextContent):
+                # Extract file path from the success message
+                text = result.text
+                if "File saved as: " in text:
+                    path = (
+                        text.split("File saved as: ")[1].split(".")[0]
+                        + "."
+                        + text.split(".")[-1].split(" ")[0]
+                    )
+                    file_paths.append(path)
+
+        message = f"Success. Files saved at: {', '.join(file_paths)}"
+        if additional_info:
+            message += f". {additional_info}"
+
+        return TextContent(type="text", text=message)
+
+    elif output_mode in ["resources", "both"]:
+        # Return list of EmbeddedResource objects
+        embedded_resources = []
+        for result in results:
+            if isinstance(result, EmbeddedResource):
+                embedded_resources.append(result)
+
+        if not embedded_resources:
+            return TextContent(type="text", text="No files generated")
+
+        return embedded_resources
+
+    else:
+        raise ValueError(
+            f"Invalid output mode: {output_mode}. Must be 'files', 'resources', or 'both'"
+        )
+
+
+def get_output_mode_description(output_mode: str) -> str:
+    """
+    Generate a dynamic description for the current output mode.
+
+    Args:
+        output_mode: The current output mode ('files', 'resources', or 'both')
+
+    Returns:
+        str: Description of how the tool will behave based on the output mode
+    """
+    if output_mode == "files":
+        return "Saves output file to directory (default: $HOME/Desktop)"
+    elif output_mode == "resources":
+        return "Returns output as base64-encoded MCP resource"
+    elif output_mode == "both":
+        return "Saves file to directory (default: $HOME/Desktop) AND returns as base64-encoded MCP resource"
+    else:
+        return "Output behavior depends on ELEVENLABS_MCP_OUTPUT_MODE setting"
