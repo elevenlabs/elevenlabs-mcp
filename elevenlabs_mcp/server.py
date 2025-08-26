@@ -21,6 +21,11 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent
 from elevenlabs.client import ElevenLabs
+from elevenlabs.types import (
+    PromptAgentInputToolsItem_System,
+    SystemToolConfigInputParams_TransferToAgent,
+    AgentTransfer,
+)
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
     make_error,
@@ -506,6 +511,9 @@ def check_subscription() -> TextContent:
         max_duration_seconds: Maximum duration of a conversation in seconds. Defaults to 600 seconds (10 minutes).
         record_voice: Whether to record the agent's voice.
         retention_days: Number of days to retain the agent's data.
+        transfer_rules: List of transfer rules for agent-to-agent transfers. Each rule should contain:
+            - agent_id: The ID of the agent to transfer to
+            - condition: Natural language condition describing when to transfer
     """
 )
 def create_agent(
@@ -526,7 +534,51 @@ def create_agent(
     max_duration_seconds: int = 300,
     record_voice: bool = True,
     retention_days: int = 730,
+    transfer_rules: list[dict] | None = None,
 ) -> TextContent:
+    # Create tools list
+    tools = [{"type": "system", "name": "end_call", "description": ""}]
+    
+    # Add transfer_to_agent tool if transfer rules are provided
+    if transfer_rules:
+        # Convert transfer rules to AgentTransfer objects
+        agent_transfers = [
+            AgentTransfer(
+                agent_id=rule["agent_id"],
+                condition=rule["condition"]
+            )
+            for rule in transfer_rules
+        ]
+        
+        # Create the transfer tool
+        transfer_tool = PromptAgentInputToolsItem_System(
+            type="system",
+            name="transfer_to_agent",
+            description="Transfer the user to a specialized agent based on their request.",
+            params=SystemToolConfigInputParams_TransferToAgent(
+                transfers=agent_transfers
+            )
+        )
+        
+        # Convert to dict format for the API
+        transfer_tool_dict = {
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": transfer_tool.description,
+            "params": {
+                "system_tool_type": "transfer_to_agent",
+                "transfers": [
+                    {
+                        "agent_id": transfer.agent_id,
+                        "condition": transfer.condition
+                    }
+                    for transfer in agent_transfers
+                ]
+            }
+        }
+        
+        tools.append(transfer_tool_dict)
+    
     conversation_config = create_conversation_config(
         language=language,
         system_prompt=system_prompt,
@@ -542,6 +594,7 @@ def create_agent(
         similarity_boost=similarity_boost,
         turn_timeout=turn_timeout,
         max_duration_seconds=max_duration_seconds,
+        tools=tools,
     )
 
     platform_settings = create_platform_settings(
@@ -555,9 +608,13 @@ def create_agent(
         platform_settings=platform_settings,
     )
 
+    transfer_info = ""
+    if transfer_rules:
+        transfer_info = f", Transfer Rules: {len(transfer_rules)} agent(s) configured for transfers"
+    
     return TextContent(
         type="text",
-        text=f"""Agent created successfully: Name: {name}, Agent ID: {response.agent_id}, System Prompt: {system_prompt}, Voice ID: {voice_id or "Default"}, Language: {language}, LLM: {llm}, You can use this agent ID for future interactions with the agent.""",
+        text=f"""Agent created successfully: Name: {name}, Agent ID: {response.agent_id}, System Prompt: {system_prompt}, Voice ID: {voice_id or "Default"}, Language: {language}, LLM: {llm}{transfer_info}, You can use this agent ID for future interactions with the agent.""",
     )
 
 
@@ -588,6 +645,8 @@ def add_knowledge_base_to_agent(
         make_error("Must provide either a URL, a file, or text")
     if len(provided_params) > 1:
         make_error("Must provide exactly one of: URL, file, or text")
+
+    is_file_based = url is None
 
     if url is not None:
         response = client.conversational_ai.knowledge_base.documents.create_from_url(
@@ -620,7 +679,7 @@ def add_knowledge_base_to_agent(
     )
     knowledge_base_list.append(
         KnowledgeBaseLocator(
-            type="file" if file else "url",
+            type="file" if is_file_based else "url",
             name=knowledge_base_name,
             id=response.id,
         )
@@ -678,6 +737,141 @@ def get_agent(agent_id: str) -> TextContent:
     return TextContent(
         type="text",
         text=f"Agent Details: Name: {response.name}, Agent ID: {response.agent_id}, Voice Configuration: {voice_info}, Created At: {datetime.fromtimestamp(response.metadata.created_at_unix_secs).strftime('%Y-%m-%d %H:%M:%S')}",
+    )
+
+
+@mcp.tool(description="Get the conversation configuration of a specific conversational AI agent")
+def get_agent_config(agent_id: str) -> TextContent:
+    """Get the conversation configuration of a specific conversational AI agent.
+
+    Args:
+        agent_id: The ID of the agent to retrieve configuration for
+
+    Returns:
+        TextContent with the full conversation configuration in JSON format
+    """
+    import json
+    
+    response = client.conversational_ai.agents.get(agent_id=agent_id)
+    
+    # Extract the conversation config
+    config = response.conversation_config
+    
+    # Convert to dict for JSON serialization
+    config_dict = config.model_dump() if hasattr(config, 'model_dump') else config.__dict__
+    
+    return TextContent(
+        type="text",
+        text=json.dumps(config_dict, indent=2)
+    )
+
+
+@mcp.tool(description="Update an existing conversational AI agent's configuration, including built-in tools")
+def update_agent_with_tools(
+    agent_id: str,
+    enable_transfer_to_agent: bool = False,
+    transfer_rules: list[dict] | None = None,
+    enable_language_detection: bool = False,
+    enable_end_call: bool = True,
+) -> TextContent:
+    """Update an existing agent's built-in tools configuration.
+    
+    Args:
+        agent_id: The ID of the agent to update
+        enable_transfer_to_agent: Whether to enable the transfer_to_agent tool
+        transfer_rules: List of transfer rules if enabling transfer_to_agent
+        enable_language_detection: Whether to enable language detection
+        enable_end_call: Whether to enable the end_call tool (default True)
+    
+    Returns:
+        TextContent with update status
+    """
+    # Get the current agent configuration
+    agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    
+    # Extract current conversation config and convert to dict
+    current_config = agent.conversation_config
+    config_dict = current_config.model_dump() if hasattr(current_config, 'model_dump') else current_config.__dict__
+    
+    # Build the tools array
+    tools = []
+    if enable_end_call:
+        tools.append({
+            "type": "system",
+            "name": "end_call",
+            "description": "",
+            "response_timeout_secs": 20,
+            "params": {"system_tool_type": "end_call"}
+        })
+    
+    if enable_transfer_to_agent and transfer_rules:
+        tools.append({
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": "",
+            "response_timeout_secs": 20,
+            "params": {
+                "system_tool_type": "transfer_to_agent",
+                "transfers": [
+                    {
+                        "agent_id": rule["agent_id"],
+                        "condition": rule["condition"]
+                    }
+                    for rule in transfer_rules
+                ]
+            }
+        })
+    
+    if enable_language_detection:
+        tools.append({
+            "type": "system",
+            "name": "language_detection",
+            "description": "",
+            "response_timeout_secs": 20,
+            "params": {"system_tool_type": "language_detection"}
+        })
+    
+    # Update the tools in the config dict
+    config_dict['agent']['prompt']['tools'] = tools
+    
+    # Create a new conversation config with the updated data
+    # We'll use the create_conversation_config helper to ensure proper structure
+    new_config = create_conversation_config(
+        language=config_dict['agent']['language'],
+        system_prompt=config_dict['agent']['prompt']['prompt'],
+        llm=config_dict['agent']['prompt']['llm'],
+        first_message=config_dict['agent']['first_message'],
+        temperature=config_dict['agent']['prompt']['temperature'],
+        max_tokens=config_dict['agent']['prompt'].get('max_tokens', -1),
+        asr_quality=config_dict['asr'].get('quality', 'high'),
+        voice_id=config_dict['tts']['voice_id'],
+        model_id=config_dict['tts']['model_id'],
+        optimize_streaming_latency=config_dict['tts'].get('optimize_streaming_latency', 3),
+        stability=config_dict['tts'].get('stability', 0.5),
+        similarity_boost=config_dict['tts'].get('similarity_boost', 0.8),
+        turn_timeout=config_dict['turn'].get('turn_timeout', 7),
+        max_duration_seconds=config_dict['conversation'].get('max_duration_seconds', 300),
+        tools=tools,
+    )
+    
+    # Update the agent
+    client.conversational_ai.agents.update(
+        agent_id=agent_id,
+        conversation_config=new_config
+    )
+    
+    # Prepare status message
+    enabled_tools = []
+    if enable_end_call:
+        enabled_tools.append("end_call")
+    if enable_transfer_to_agent:
+        enabled_tools.append(f"transfer_to_agent ({len(transfer_rules)} rules)")
+    if enable_language_detection:
+        enabled_tools.append("language_detection")
+    
+    return TextContent(
+        type="text",
+        text=f"Agent {agent_id} updated successfully. Enabled built-in tools: {', '.join(enabled_tools) if enabled_tools else 'None'}"
     )
 
 
@@ -1082,6 +1276,31 @@ def play_audio(input_file_path: str) -> TextContent:
     file_path = handle_input_file(input_file_path)
     play(open(file_path, "rb").read(), use_ffmpeg=False)
     return TextContent(type="text", text=f"Successfully played audio file: {file_path}")
+
+
+@mcp.tool(description="Get information about the ElevenLabs MCP server project")
+def get_info() -> TextContent:
+    """Get information about the ElevenLabs MCP server project location and version.
+    
+    Returns:
+        TextContent with project information including disk location and version
+    """
+    import pathlib
+    
+    # Get the project root directory (where server.py is located)
+    project_root = pathlib.Path(__file__).parent.absolute()
+    
+    # Get the parent directory which should be the package root
+    package_root = project_root.parent.absolute()
+    
+    info = f"""ElevenLabs MCP Server Information:
+Project Location: {project_root}
+Package Root: {package_root}
+Version: {__version__}
+Base Path (ELEVENLABS_MCP_BASE_PATH): {base_path or 'Not set (using Desktop)'}
+API Key Configured: {'Yes' if api_key else 'No'}"""
+    
+    return TextContent(type="text", text=info)
 
 
 def main():
