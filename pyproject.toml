@@ -1,6 +1,6 @@
 [project]
 name = "elevenlabs-mcp"
-version = "0.5.1"
+version = "0.6.0"
 description = "ElevenLabs MCP Server"
 authors = [
     { name = "Jacek Duszenko", email = "jacek@elevenlabs.io" },
@@ -33,7 +33,7 @@ dependencies = [
     "python-dotenv==1.0.1",
     "pydantic>=2.6.1",
     "httpx==0.28.1",
-    "elevenlabs>=2.7.1",
+    "elevenlabs>=2.12.1",
     "fuzzywuzzy==0.18.0",
     "python-Levenshtein>=0.25.0",
     "sounddevice==0.5.1",

@@ -1015,14 +1015,14 @@ def play_audio(input_file_path: str) -> TextContent:
         prompt: Prompt to convert to music. Must provide either prompt or composition_plan.
         output_directory: Directory to save the output audio file
         composition_plan: Composition plan to use for the music. Must provide either prompt or composition_plan.
-        music_length_ms: Length of the generated music in milliseconds
+        music_length_ms: Length of the generated music in milliseconds. Cannot be used if composition_plan is provided.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.""")
 def compose_music(
     prompt: str | None = None,
     output_directory: str | None = None,
     composition_plan: MusicPrompt | None = None,
-    music_length_ms: int = 10000,
+    music_length_ms: int | None = None,
     ) -> TextContent:
 
     if prompt is None and composition_plan is None:
@@ -1031,10 +1031,11 @@ def compose_music(
     if prompt is not None and composition_plan is not None:
         make_error("Only one of prompt or composition_plan must be provided")
 
+    if music_length_ms is not None and composition_plan is not None:
+        make_error("music_length_ms cannot be used if composition_plan is provided")
+
     output_path = make_output_path(output_directory, base_path)
-    # Use prompt if available, otherwise create a filename based on composition plan
-    filename_text = prompt if prompt is not None else "composition_plan"
-    output_file_name = make_output_file("music", filename_text, output_path, "mp3")
+    output_file_name = make_output_file("music", "", output_path, "mp3")
 
     audio_data = client.music.compose(
         prompt=prompt,
