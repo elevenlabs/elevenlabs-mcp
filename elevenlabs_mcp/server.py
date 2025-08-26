@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent
 from elevenlabs.client import ElevenLabs
+from elevenlabs.types import MusicPrompt
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
     make_error,
@@ -1005,6 +1006,73 @@ def play_audio(input_file_path: str) -> TextContent:
     file_path = handle_input_file(input_file_path)
     play(open(file_path, "rb").read(), use_ffmpeg=False)
     return TextContent(type="text", text=f"Successfully played audio file: {file_path}")
+
+
+@mcp.tool(description="""Convert a prompt to music and save the output audio file to a given directory.
+    Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
+
+    Args:
+        prompt: Prompt to convert to music. Must provide either prompt or composition_plan.
+        output_directory: Directory to save the output audio file
+        composition_plan: Composition plan to use for the music. Must provide either prompt or composition_plan.
+        music_length_ms: Length of the generated music in milliseconds
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.""")
+def compose_music(
+    prompt: str | None = None,
+    output_directory: str | None = None,
+    composition_plan: MusicPrompt | None = None,
+    music_length_ms: int = 10000,
+    ) -> TextContent:
+
+    if prompt is None and composition_plan is None:
+        make_error(f"Either prompt or composition_plan must be provided. Prompt: {prompt}")
+
+    if prompt is not None and composition_plan is not None:
+        make_error("Only one of prompt or composition_plan must be provided")
+
+    output_path = make_output_path(output_directory, base_path)
+    # Use prompt if available, otherwise create a filename based on composition plan
+    filename_text = prompt if prompt is not None else "composition_plan"
+    output_file_name = make_output_file("music", filename_text, output_path, "mp3")
+
+    audio_data = client.music.compose(
+        prompt=prompt,
+        music_length_ms=music_length_ms,
+        composition_plan=composition_plan,
+    )
+
+    audio_bytes = b"".join(audio_data)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path / output_file_name, "wb") as f:
+        f.write(audio_bytes)
+
+    return TextContent(
+        type="text",
+        text=f"Success. File saved as: {output_path / output_file_name}.",
+    )
+
+@mcp.tool(description="""Create a composition plan for music generation. Usage of this endpoint does not cost any credits but is subject to rate limiting depending on your tier. Composition plans can be used when generating music with the compose_music tool.
+
+    Args:
+        prompt: Prompt to create a composition plan for
+        music_length_ms: The length of the composition plan to generate in milliseconds. Must be between 10000ms and 300000ms. Optional - if not provided, the model will choose a length based on the prompt.
+        source_composition_plan: An optional composition plan to use as a source for the new composition plan
+    """)
+def create_composition_plan(
+    prompt: str,
+    music_length_ms: int | None = None,
+    source_composition_plan: MusicPrompt | None = None,
+) -> MusicPrompt:
+
+    composition_plan = client.music.composition_plan.create(
+        prompt=prompt,
+        music_length_ms=music_length_ms,
+        source_composition_plan=source_composition_plan,
+    )
+
+    return composition_plan
 
 
 def main():
