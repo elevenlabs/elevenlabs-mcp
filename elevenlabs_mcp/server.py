@@ -32,76 +32,6 @@ from elevenlabs_mcp.utils import (
     handle_large_text,
 )
 
-
-def format_diarized_transcript(transcription) -> str:
-    """Format transcript with speaker labels from diarized response."""
-    try:
-        # Try to access words array - the exact attribute might vary
-        words = None
-        if hasattr(transcription, 'words'):
-            words = transcription.words
-        elif hasattr(transcription, '__dict__'):
-            # Try to find words in the response dict
-            for key, value in transcription.__dict__.items():
-                if key == 'words' or (isinstance(value, list) and len(value) > 0 and 
-                                    (hasattr(value[0], 'speaker_id') if hasattr(value[0], '__dict__') else 
-                                     ('speaker_id' in value[0] if isinstance(value[0], dict) else False))):
-                    words = value
-                    break
-        
-        if not words:
-            return transcription.text
-        
-        formatted_lines = []
-        current_speaker = None
-        current_text = []
-        
-        for word in words:
-            # Get speaker_id - might be an attribute or dict key
-            word_speaker = None
-            if hasattr(word, 'speaker_id'):
-                word_speaker = word.speaker_id
-            elif isinstance(word, dict) and 'speaker_id' in word:
-                word_speaker = word['speaker_id']
-            
-            # Get text - might be an attribute or dict key
-            word_text = None
-            if hasattr(word, 'text'):
-                word_text = word.text
-            elif isinstance(word, dict) and 'text' in word:
-                word_text = word['text']
-            
-            if not word_speaker or not word_text:
-                continue
-                
-            # Skip spacing/punctuation types if they exist
-            if hasattr(word, 'type') and word.type == 'spacing':
-                continue
-            elif isinstance(word, dict) and word.get('type') == 'spacing':
-                continue
-            
-            if current_speaker != word_speaker:
-                # Save previous speaker's text
-                if current_speaker and current_text:
-                    speaker_label = current_speaker.upper().replace('_', ' ')
-                    formatted_lines.append(f"{speaker_label}: {' '.join(current_text)}")
-                
-                # Start new speaker
-                current_speaker = word_speaker
-                current_text = [word_text.strip()]
-            else:
-                current_text.append(word_text.strip())
-        
-        # Add final speaker's text
-        if current_speaker and current_text:
-            speaker_label = current_speaker.upper().replace('_', ' ')
-            formatted_lines.append(f"{speaker_label}: {' '.join(current_text)}")
-        
-        return '\n\n'.join(formatted_lines)
-        
-    except Exception:
-        # Fallback to regular text if something goes wrong
-        return transcription.text
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
 from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 
@@ -125,6 +55,87 @@ custom_client = httpx.Client(
 
 client = ElevenLabs(api_key=api_key, httpx_client=custom_client)
 mcp = FastMCP("ElevenLabs")
+
+
+def format_diarized_transcript(transcription) -> str:
+    """Format transcript with speaker labels from diarized response."""
+    try:
+        # Try to access words array - the exact attribute might vary
+        words = None
+        if hasattr(transcription, "words"):
+            words = transcription.words
+        elif hasattr(transcription, "__dict__"):
+            # Try to find words in the response dict
+            for key, value in transcription.__dict__.items():
+                if key == "words" or (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and (
+                        hasattr(value[0], "speaker_id")
+                        if hasattr(value[0], "__dict__")
+                        else (
+                            "speaker_id" in value[0]
+                            if isinstance(value[0], dict)
+                            else False
+                        )
+                    )
+                ):
+                    words = value
+                    break
+
+        if not words:
+            return transcription.text
+
+        formatted_lines = []
+        current_speaker = None
+        current_text = []
+
+        for word in words:
+            # Get speaker_id - might be an attribute or dict key
+            word_speaker = None
+            if hasattr(word, "speaker_id"):
+                word_speaker = word.speaker_id
+            elif isinstance(word, dict) and "speaker_id" in word:
+                word_speaker = word["speaker_id"]
+
+            # Get text - might be an attribute or dict key
+            word_text = None
+            if hasattr(word, "text"):
+                word_text = word.text
+            elif isinstance(word, dict) and "text" in word:
+                word_text = word["text"]
+
+            if not word_speaker or not word_text:
+                continue
+
+            # Skip spacing/punctuation types if they exist
+            if hasattr(word, "type") and word.type == "spacing":
+                continue
+            elif isinstance(word, dict) and word.get("type") == "spacing":
+                continue
+
+            if current_speaker != word_speaker:
+                # Save previous speaker's text
+                if current_speaker and current_text:
+                    speaker_label = current_speaker.upper().replace("_", " ")
+                    formatted_lines.append(f"{speaker_label}: {' '.join(current_text)}")
+
+                # Start new speaker
+                current_speaker = word_speaker
+                current_text = [word_text.strip()]
+            else:
+                current_text.append(word_text.strip())
+
+        # Add final speaker's text
+        if current_speaker and current_text:
+            speaker_label = current_speaker.upper().replace("_", " ")
+            formatted_lines.append(f"{speaker_label}: {' '.join(current_text)}")
+
+        return "\n\n".join(formatted_lines)
+
+    except Exception:
+        # Fallback to regular text if something goes wrong
+        return transcription.text
 
 
 @mcp.tool(
@@ -280,6 +291,10 @@ def speech_to_text(
         output_file_name = make_output_file("stt", file_path.name, output_path, "txt")
     with file_path.open("rb") as f:
         audio_bytes = f.read()
+
+    if language_code == "" or language_code is None:
+        language_code = None
+
     transcription = client.speech_to_text.convert(
         model_id="scribe_v1",
         file=audio_bytes,
@@ -319,6 +334,7 @@ def speech_to_text(
         duration_seconds: Duration of the sound effect in seconds
         output_directory: Directory where files should be saved.
             Defaults to $HOME/Desktop if not provided.
+        loop: Whether to loop the sound effect. Defaults to False.
         output_format (str, optional): Output format of the generated audio. Formatted as codec_sample_rate_bitrate. So an mp3 with 22.05kHz sample rate at 32kbs is represented as mp3_22050_32. MP3 with 192kbps bitrate requires you to be subscribed to Creator tier or above. PCM with 44.1kHz sample rate requires you to be subscribed to Pro tier or above. Note that the μ-law format (sometimes written mu-law, often approximated as u-law) is commonly used for Twilio audio inputs.
             Defaults to "mp3_44100_128". Must be one of:
             mp3_22050_32
@@ -346,7 +362,8 @@ def text_to_sound_effects(
     duration_seconds: float = 2.0,
     output_directory: str | None = None,
     output_format: str = "mp3_44100_128",
-) -> list[TextContent]:
+    loop: bool = False,
+) -> TextContent:
     if duration_seconds < 0.5 or duration_seconds > 5:
         make_error("Duration must be between 0.5 and 5 seconds")
     output_path = make_output_path(output_directory, base_path)
@@ -356,6 +373,7 @@ def text_to_sound_effects(
         text=text,
         output_format=output_format,
         duration_seconds=duration_seconds,
+        loop=loop,
     )
     audio_bytes = b"".join(audio_data)
 
@@ -456,7 +474,7 @@ def voice_clone(
 )
 def isolate_audio(
     input_file_path: str, output_directory: str | None = None
-) -> list[TextContent]:
+) -> TextContent:
     file_path = handle_input_file(input_file_path)
     output_path = make_output_path(output_directory, base_path)
     output_file_name = make_output_file("iso", file_path.name, output_path, "mp3")
@@ -1085,7 +1103,8 @@ def play_audio(input_file_path: str) -> TextContent:
     return TextContent(type="text", text=f"Successfully played audio file: {file_path}")
 
 
-@mcp.tool(description="""Convert a prompt to music and save the output audio file to a given directory.
+@mcp.tool(
+    description="""Convert a prompt to music and save the output audio file to a given directory.
     Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
 
     Args:
@@ -1094,16 +1113,18 @@ def play_audio(input_file_path: str) -> TextContent:
         composition_plan: Composition plan to use for the music. Must provide either prompt or composition_plan.
         music_length_ms: Length of the generated music in milliseconds. Cannot be used if composition_plan is provided.
 
-    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.""")
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user."""
+)
 def compose_music(
     prompt: str | None = None,
     output_directory: str | None = None,
     composition_plan: MusicPrompt | None = None,
     music_length_ms: int | None = None,
-    ) -> TextContent:
-
+) -> TextContent:
     if prompt is None and composition_plan is None:
-        make_error(f"Either prompt or composition_plan must be provided. Prompt: {prompt}")
+        make_error(
+            f"Either prompt or composition_plan must be provided. Prompt: {prompt}"
+        )
 
     if prompt is not None and composition_plan is not None:
         make_error("Only one of prompt or composition_plan must be provided")
@@ -1131,19 +1152,21 @@ def compose_music(
         text=f"Success. File saved as: {output_path / output_file_name}.",
     )
 
-@mcp.tool(description="""Create a composition plan for music generation. Usage of this endpoint does not cost any credits but is subject to rate limiting depending on your tier. Composition plans can be used when generating music with the compose_music tool.
+
+@mcp.tool(
+    description="""Create a composition plan for music generation. Usage of this endpoint does not cost any credits but is subject to rate limiting depending on your tier. Composition plans can be used when generating music with the compose_music tool.
 
     Args:
         prompt: Prompt to create a composition plan for
         music_length_ms: The length of the composition plan to generate in milliseconds. Must be between 10000ms and 300000ms. Optional - if not provided, the model will choose a length based on the prompt.
         source_composition_plan: An optional composition plan to use as a source for the new composition plan
-    """)
+    """
+)
 def create_composition_plan(
     prompt: str,
     music_length_ms: int | None = None,
     source_composition_plan: MusicPrompt | None = None,
 ) -> MusicPrompt:
-
     composition_plan = client.music.composition_plan.create(
         prompt=prompt,
         music_length_ms=music_length_ms,

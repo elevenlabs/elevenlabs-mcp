@@ -288,7 +288,7 @@ wheels = [
 
 [[package]]
 name = "elevenlabs"
-version = "2.12.1"
+version = "2.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -298,14 +298,14 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/90/e7/42c6e2c5e9189a6bcd89595980c562e7cbe01c5f2b7bb54a04e973d6c9d7/elevenlabs-2.12.1.tar.gz", hash = "sha256:71d3febd7424c7a27cfc21e4c2cd9fe91d096ae843a40d95c5a8e344d8ed7390", size = 301794, upload-time = "2025-08-25T04:30:47.791Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/13/55402b275dc8265004d324869e93f81f660e223ee071af6a101ebbca76ac/elevenlabs-2.13.0.tar.gz", hash = "sha256:1d7df140ac5ee8b94e5e213e6d322bec4b88470efb320d754d8f03d124111ab3", size = 302391, upload-time = "2025-08-29T10:35:58.396Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/af/c69b2640eecb790b7320ae9eca9f229cf964e949dae4d76299f335ed083b/elevenlabs-2.12.1-py3-none-any.whl", hash = "sha256:9aa0a6a1d387984b3b5e415e44ae947929c4c14fe106e5c3ccafb34e415430d2", size = 858510, upload-time = "2025-08-25T04:30:46.268Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/2e/b22579723dbeb55bb9731329f17b1dd2ede97bda061938ae8de6d31f5376/elevenlabs-2.13.0-py3-none-any.whl", hash = "sha256:e98e9e50516966fa2dce8a6a88320ca0f749ffdfb77fec24e679308518aa6752", size = 858682, upload-time = "2025-08-29T10:35:56.8Z" },
 ]
 
 [[package]]
 name = "elevenlabs-mcp"
-version = "0.5.1"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "elevenlabs" },
@@ -346,7 +346,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.3" },
-    { name = "elevenlabs", specifier = ">=2.12.1" },
+    { name = "elevenlabs", specifier = ">=2.13.0" },
     { name = "fastapi", specifier = "==0.109.2" },
     { name = "fastmcp", marker = "extra == 'dev'", specifier = "==0.4.1" },
     { name = "fuzzywuzzy", specifier = "==0.18.0" },
