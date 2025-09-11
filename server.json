@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.elevenlabs/elevenlabs-mcp",
+  "description": "Official ElevenLabs MCP server that enables interaction with powerful Text to Speech, Voice Agents and audio processing APIs",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/elevenlabs/elevenlabs-mcp",
+    "source": "github"
+  },
+  "version": "0.7.0",
+  "packages": [
+    {
+      "registry_type": "pypi",
+      "registry_base_url": "https://pypi.org",
+      "identifier": "elevenlabs-mcp",
+      "version": "0.7.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environment_variables": [
+        {
+          "description": "Your ElevenLabs API key",
+          "is_required": true,
+          "format": "string",
+          "is_secret": true,
+          "name": "ELEVENLABS_API_KEY"
+        },
+        {
+          "description": "The base path for the MCP server. Defaults to $HOME/Desktop if not provided.",
+          "is_required": false,
+          "format": "string",
+          "is_secret": false,
+          "name": "ELEVENLABS_MCP_BASE_PATH"
+        }
+      ]
+    }
+  ]
+}
