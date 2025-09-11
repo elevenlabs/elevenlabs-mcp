@@ -13,3 +13,5 @@ dist/
 elevenlabs_mcp.egg-info/
 .coverage
 coverage.xml
+.mcpregistry_github_token
+.mcpregistry_registry_token

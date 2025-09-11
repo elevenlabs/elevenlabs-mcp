@@ -30,6 +30,7 @@ from elevenlabs_mcp.utils import (
     handle_input_file,
     parse_conversation_transcript,
     handle_large_text,
+    parse_location,
 )
 
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
@@ -46,14 +47,16 @@ DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW
 if not api_key:
     raise ValueError("ELEVENLABS_API_KEY environment variable is required")
 
+origin = parse_location(os.getenv("ELEVENLABS_API_RESIDENCY"))
+
 # Add custom client to ElevenLabs to set User-Agent header
 custom_client = httpx.Client(
     headers={
         "User-Agent": f"ElevenLabs-MCP/{__version__}",
-    }
+    },
 )
 
-client = ElevenLabs(api_key=api_key, httpx_client=custom_client)
+client = ElevenLabs(api_key=api_key, httpx_client=custom_client, base_url=origin)
 mcp = FastMCP("ElevenLabs")
 
 

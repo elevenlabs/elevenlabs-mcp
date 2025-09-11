@@ -63,7 +63,15 @@ Try asking Claude:
 
 ## Optional features
 
+### Base output file path
+
 You can add the `ELEVENLABS_MCP_BASE_PATH` environment variable to the `claude_desktop_config.json` to specify the base path MCP server should look for and output files specified with relative paths.
+
+### Data residency keys
+
+You can specify the data residency region with the `ELEVENLABS_API_RESIDENCY` environment variable. Defaults to `"us"`.
+
+**Note:** Data residency is an enterprise only feature. See [the docs](https://elevenlabs.io/docs/product-guides/administration/data-residency#overview) for more details.
 
 ## Contributing
 
