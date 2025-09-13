@@ -36,7 +36,7 @@ from elevenlabs_mcp.utils import (
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
 from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 
-from elevenlabs import play
+from elevenlabs.play import play
 from elevenlabs_mcp import __version__
 
 load_dotenv()
