@@ -7,13 +7,13 @@
     "url": "https://github.com/elevenlabs/elevenlabs-mcp",
     "source": "github"
   },
-  "version": "0.7.0",
+  "version": "0.8.1",
   "packages": [
     {
       "registry_type": "pypi",
       "registry_base_url": "https://pypi.org",
       "identifier": "elevenlabs-mcp",
-      "version": "0.7.0",
+      "version": "0.8.1",
       "transport": {
         "type": "stdio"
       },
