@@ -29,12 +29,12 @@ def is_file_writeable(path: Path) -> bool:
 
 
 def make_output_file(
-    tool: str, text: str, output_path: Path, extension: str, full_id: bool = False
+    tool: str, text: str, extension: str, full_id: bool = False
 ) -> Path:
     id = text if full_id else text[:5]
 
     output_file_name = f"{tool}_{id.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{extension}"
-    return output_path / output_file_name
+    return Path(output_file_name)
 
 
 def make_output_path(
@@ -42,7 +42,11 @@ def make_output_path(
 ) -> Path:
     output_path = None
     if output_directory is None:
-        output_path = Path.home() / "Desktop"
+        base = base_path
+        if base and base.strip():
+            output_path = Path(os.path.expanduser(base))
+        else:
+            output_path = Path.home() / "Desktop"
     elif not os.path.isabs(output_directory) and base_path:
         output_path = Path(os.path.expanduser(base_path)) / Path(output_directory)
     else:
@@ -291,7 +295,7 @@ def generate_resource_uri(filename: str) -> str:
 
 
 def create_resource_response(
-    file_data: bytes, filename: str, file_extension: str
+    file_data: bytes, filename: str, file_extension: str, directory: Path | None = None
 ) -> EmbeddedResource:
     """
     Create a proper MCP EmbeddedResource response.
@@ -300,12 +304,17 @@ def create_resource_response(
         file_data: Raw file data as bytes
         filename: Name of the file
         file_extension: File extension for MIME type detection
+        directory: Optional directory where the file is or would be saved; used to embed path in URI
 
     Returns:
         EmbeddedResource: Proper MCP resource object
     """
     mime_type = get_mime_type(file_extension)
-    resource_uri = generate_resource_uri(filename)
+    if directory is not None:
+        full_path = (directory / filename)
+        resource_uri = f"elevenlabs://{full_path.as_posix()}"
+    else:
+        resource_uri = generate_resource_uri(filename)
 
     # For text files, use TextResourceContents
     if mime_type.startswith("text/"):
@@ -369,14 +378,14 @@ def handle_output_mode(
 
     elif output_mode == "resources":
         # Return as EmbeddedResource without saving to disk
-        return create_resource_response(file_data, filename, file_extension)
+        return create_resource_response(file_data, filename, file_extension, directory=output_path)
 
     elif output_mode == "both":
         # Save to disk AND return as EmbeddedResource
         output_path.mkdir(parents=True, exist_ok=True)
         with open(full_file_path, "wb") as f:
             f.write(file_data)
-        return create_resource_response(file_data, filename, file_extension)
+        return create_resource_response(file_data, filename, file_extension, directory=output_path)
 
     else:
         raise ValueError(

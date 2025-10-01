@@ -28,8 +28,7 @@ def test_is_file_writeable():
 def test_make_output_file():
     tool = "test"
     text = "hello world"
-    output_path = Path("/tmp")
-    result = make_output_file(tool, text, output_path, "mp3")
+    result = make_output_file(tool, text, "mp3")
     assert result.name.startswith("test_hello")
     assert result.suffix == ".mp3"
 

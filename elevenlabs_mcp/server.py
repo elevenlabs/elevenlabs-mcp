@@ -46,6 +46,7 @@ from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 
 from elevenlabs.play import play
 from elevenlabs_mcp import __version__
+from pathlib import Path
 
 load_dotenv()
 api_key = os.getenv("ELEVENLABS_API_KEY")
@@ -155,9 +156,21 @@ def get_elevenlabs_resource(filename: str) -> Resource:
     """
     Resource handler for ElevenLabs generated files.
     """
-    # Construct the file path
-    output_path = make_output_path(None, base_path)
-    file_path = output_path / filename
+    candidate = Path(filename)
+    base_dir = make_output_path(None, base_path)
+
+    if candidate.is_absolute():
+        file_path = candidate.resolve()
+    else:
+        base_dir_resolved = base_dir.resolve()
+        resolved_file = (base_dir_resolved / candidate).resolve()
+        try:
+            resolved_file.relative_to(base_dir_resolved)
+        except ValueError:
+            make_error(
+                f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
+            )
+        file_path = resolved_file
 
     if not file_path.exists():
         raise FileNotFoundError(f"Resource file not found: {filename}")
@@ -276,7 +289,7 @@ def text_to_speech(
     voice_id = voice.voice_id if voice else DEFAULT_VOICE_ID
 
     output_path = make_output_path(output_directory, base_path)
-    output_file_name = make_output_file("tts", text, output_path, "mp3")
+    output_file_name = make_output_file("tts", text, "mp3")
 
     if model_id is None:
         model_id = (
@@ -338,7 +351,7 @@ def speech_to_text(
     file_path = handle_input_file(input_file_path)
     if save_transcript_to_file:
         output_path = make_output_path(output_directory, base_path)
-        output_file_name = make_output_file("stt", file_path.name, output_path, "txt")
+        output_file_name = make_output_file("stt", file_path.name, "txt")
     with file_path.open("rb") as f:
         audio_bytes = f.read()
 
@@ -425,7 +438,7 @@ def text_to_sound_effects(
     if duration_seconds < 0.5 or duration_seconds > 5:
         make_error("Duration must be between 0.5 and 5 seconds")
     output_path = make_output_path(output_directory, base_path)
-    output_file_name = make_output_file("sfx", text, output_path, "mp3")
+    output_file_name = make_output_file("sfx", text, "mp3")
 
     audio_data = client.text_to_sound_effects.convert(
         text=text,
@@ -529,7 +542,7 @@ def isolate_audio(
 ) -> Union[TextContent, EmbeddedResource]:
     file_path = handle_input_file(input_file_path)
     output_path = make_output_path(output_directory, base_path)
-    output_file_name = make_output_file("iso", file_path.name, output_path, "mp3")
+    output_file_name = make_output_file("iso", file_path.name, "mp3")
     with file_path.open("rb") as f:
         audio_bytes = f.read()
     audio_data = client.audio_isolation.convert(
@@ -899,7 +912,7 @@ def speech_to_speech(
     assert voice is not None  # Type assertion for type checker
     file_path = handle_input_file(input_file_path)
     output_path = make_output_path(output_directory, base_path)
-    output_file_name = make_output_file("sts", file_path.name, output_path, "mp3")
+    output_file_name = make_output_file("sts", file_path.name, "mp3")
 
     with file_path.open("rb") as f:
         audio_bytes = f.read()
@@ -949,7 +962,7 @@ def text_to_voice(
 
     for preview in previews.previews:
         output_file_name = make_output_file(
-            "voice_design", preview.generated_voice_id, output_path, "mp3", full_id=True
+            "voice_design", preview.generated_voice_id, "mp3", full_id=True
         )
         generated_voice_ids.append(preview.generated_voice_id)
         audio_bytes = base64.b64decode(preview.audio_base_64)
@@ -1179,7 +1192,7 @@ def compose_music(
         make_error("music_length_ms cannot be used if composition_plan is provided")
 
     output_path = make_output_path(output_directory, base_path)
-    output_file_name = make_output_file("music", "", output_path, "mp3")
+    output_file_name = make_output_file("music", "", "mp3")
 
     audio_data = client.music.compose(
         prompt=prompt,
