@@ -1,7 +1,7 @@
 {
   "name": "elevenlabs",
   "version": "0.0.1",
-  "description": "ElevenLabs MCP server for text-to-speech, voice design, conversational AI, music, sound effects, and audio processing capabilities.",
+  "description": "ElevenLabs extension for text-to-speech, voice design, conversational AI, music, sound effects, and audio processing capabilities.",
   "contextFileName": "GEMINI_CLI.md",
   "mcpServers": {
     "ElevenLabs": {
