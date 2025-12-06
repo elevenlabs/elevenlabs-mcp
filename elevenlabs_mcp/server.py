@@ -1244,12 +1244,9 @@ def main():
     try:
         mcp.run()
     except (BrokenPipeError, KeyboardInterrupt):
-        pass
-    except BaseExceptionGroup as eg:
-        if not _is_broken_pipe_error(eg):
-            raise
-    except Exception as e:
-        if not _is_broken_pipe_error(e):
+        pass    # Ignore broken pipe and keyboard interrupt errors
+    except (Exception, BaseExceptionGroup) as err:
+        if not _is_broken_pipe_error(err):
             raise
     finally:
         try:
