@@ -11,20 +11,16 @@ Each tool that makes an API call is marked with a cost warning. Please follow th
 Tools without cost warnings in their description are free to use as they only read existing data.
 """
 
-import httpx
-import os
 import base64
+import sys
 from datetime import datetime
 from io import BytesIO
 from typing import Literal, Union
-from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
 from mcp.types import (
     TextContent,
     Resource,
     EmbeddedResource,
 )
-from elevenlabs.client import ElevenLabs
 from elevenlabs.types import MusicPrompt
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
@@ -34,7 +30,6 @@ from elevenlabs_mcp.utils import (
     handle_input_file,
     parse_conversation_transcript,
     handle_large_text,
-    parse_location,
     get_mime_type,
     handle_output_mode,
     handle_multiple_files_output_mode,
@@ -45,31 +40,12 @@ from elevenlabs_mcp.convai import create_conversation_config, create_platform_se
 from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 
 from elevenlabs.play import play
-from elevenlabs_mcp import __version__
 from pathlib import Path
 
-load_dotenv()
-api_key = os.getenv("ELEVENLABS_API_KEY")
-base_path = os.getenv("ELEVENLABS_MCP_BASE_PATH")
-output_mode = os.getenv("ELEVENLABS_MCP_OUTPUT_MODE", "files").strip().lower()
-DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
+from elevenlabs_mcp.mcp import mcp, client, base_path, output_mode, DEFAULT_VOICE_ID
 
-if output_mode not in {"files", "resources", "both"}:
-    raise ValueError("ELEVENLABS_MCP_OUTPUT_MODE must be one of: 'files', 'resources', 'both'")
-if not api_key:
-    raise ValueError("ELEVENLABS_API_KEY environment variable is required")
+import elevenlabs_mcp.agents  # noqa: F401 - registers agent and tools management MCP tools
 
-origin = parse_location(os.getenv("ELEVENLABS_API_RESIDENCY"))
-
-# Add custom client to ElevenLabs to set User-Agent header
-custom_client = httpx.Client(
-    headers={
-        "User-Agent": f"ElevenLabs-MCP/{__version__}",
-    },
-)
-
-client = ElevenLabs(api_key=api_key, httpx_client=custom_client, base_url=origin)
-mcp = FastMCP("ElevenLabs")
 
 
 def format_diarized_transcript(transcription) -> str:
@@ -206,7 +182,7 @@ def get_elevenlabs_resource(filename: str) -> Resource:
 
 @mcp.tool(
     description=f"""Convert text to speech with a given voice. {get_output_mode_description(output_mode)}.
-    
+
     Only one of voice_id or voice_name can be provided. If none are provided, the default voice will be used.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -395,7 +371,7 @@ def speech_to_text(
 
 @mcp.tool(
     description=f"""Convert text description of a sound effect to sound effect with a given duration. {get_output_mode_description(output_mode)}.
-    
+
     Duration must be between 0.5 and 5 seconds.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -719,47 +695,6 @@ def add_knowledge_base_to_agent(
     )
 
 
-@mcp.tool(description="List all available conversational AI agents")
-def list_agents() -> TextContent:
-    """List all available conversational AI agents.
-
-    Returns:
-        TextContent with a formatted list of available agents
-    """
-    response = client.conversational_ai.agents.list()
-
-    if not response.agents:
-        return TextContent(type="text", text="No agents found.")
-
-    agent_list = ",".join(
-        f"{agent.name} (ID: {agent.agent_id})" for agent in response.agents
-    )
-
-    return TextContent(type="text", text=f"Available agents: {agent_list}")
-
-
-@mcp.tool(description="Get details about a specific conversational AI agent")
-def get_agent(agent_id: str) -> TextContent:
-    """Get details about a specific conversational AI agent.
-
-    Args:
-        agent_id: The ID of the agent to retrieve
-
-    Returns:
-        TextContent with detailed information about the agent
-    """
-    response = client.conversational_ai.agents.get(agent_id=agent_id)
-
-    voice_info = "None"
-    if response.conversation_config.tts:
-        voice_info = f"Voice ID: {response.conversation_config.tts.voice_id}"
-
-    return TextContent(
-        type="text",
-        text=f"Agent Details: Name: {response.name}, Agent ID: {response.agent_id}, Voice Configuration: {voice_info}, Created At: {datetime.fromtimestamp(response.metadata.created_at_unix_secs).strftime('%Y-%m-%d %H:%M:%S')}",
-    )
-
-
 @mcp.tool(
     description="""Gets conversation with transcript. Returns: conversation details and full transcript. Use when: analyzing completed agent conversations.
 
@@ -931,7 +866,7 @@ def speech_to_speech(
 
 @mcp.tool(
     description=f"""Create voice previews from a text prompt. Creates three previews with slight variations. {get_output_mode_description(output_mode)}.
-    
+
     If no text is provided, the tool will auto-generate text.
 
     Voice preview files are saved as: voice_design_(generated_voice_id)_(timestamp).mp3
