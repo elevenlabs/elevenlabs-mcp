@@ -13,6 +13,7 @@ Tools without cost warnings in their description are free to use as they only re
 
 import httpx
 import os
+import sys
 import base64
 from datetime import datetime
 from io import BytesIO
@@ -1250,6 +1251,7 @@ def main():
             raise
     finally:
         try:
+            sys.stdout.close()
             sys.stderr.close()
         except Exception:
             pass
