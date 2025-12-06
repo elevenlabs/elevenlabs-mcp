@@ -1229,10 +1229,33 @@ def create_composition_plan(
     return composition_plan
 
 
+def _is_broken_pipe_error(exc: BaseException) -> bool:
+    """Check if an exception is a BrokenPipeError or contains only BrokenPipeErrors."""
+    if isinstance(exc, BrokenPipeError):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return all(_is_broken_pipe_error(e) for e in exc.exceptions)
+    return False
+
+
 def main():
-    print("Starting MCP server")
     """Run the MCP server"""
-    mcp.run()
+    print("Starting MCP server")
+    try:
+        mcp.run()
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass
+    except BaseExceptionGroup as eg:
+        if not _is_broken_pipe_error(eg):
+            raise
+    except Exception as e:
+        if not _is_broken_pipe_error(e):
+            raise
+    finally:
+        try:
+            sys.stderr.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
