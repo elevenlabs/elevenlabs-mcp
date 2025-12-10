@@ -13,15 +13,20 @@ Tools without cost warnings in their description are free to use as they only re
 
 import base64
 import sys
+
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Literal, Union
+
+from elevenlabs.play import play
+from elevenlabs.types import MusicPrompt
+from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 from mcp.types import (
     TextContent,
     Resource,
     EmbeddedResource,
 )
-from elevenlabs.types import MusicPrompt
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
     make_error,
@@ -35,13 +40,7 @@ from elevenlabs_mcp.utils import (
     handle_multiple_files_output_mode,
     get_output_mode_description,
 )
-
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
-from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
-
-from elevenlabs.play import play
-from pathlib import Path
-
 from elevenlabs_mcp.mcp import mcp, client, base_path, output_mode, DEFAULT_VOICE_ID
 
 import elevenlabs_mcp.agents  # noqa: F401 - registers agent and tools management MCP tools

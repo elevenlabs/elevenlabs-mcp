@@ -21,7 +21,7 @@ from elevenlabs.types import (
 from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
 from elevenlabs_mcp.mcp import mcp, client, DEFAULT_VOICE_ID
-from elevenlabs_mcp.utils import make_error, handle_input_file
+from elevenlabs_mcp.utils import Schemas, make_error, handle_input_file
 from mcp.types import TextContent
 
 
@@ -194,12 +194,10 @@ def list_agents() -> TextContent:
     if not response.agents:
         return TextContent(type="text", text="No agents found.")
 
-    agent_list = ",".join(
+    agents = ", ".join(
         f"{agent.name} (ID: {agent.agent_id})" for agent in response.agents
     )
-
-    return TextContent(type="text", text=f"Available agents: {agent_list}")
-
+    return TextContent(type="text", text=f"Available agents: {agents}")
 
 @mcp.tool(description="Get details about a specific conversational AI agent")
 def get_agent(agent_id: str) -> TextContent:
@@ -235,16 +233,16 @@ def list_workspace_tools() -> TextContent:
     if not response.tools:
         return TextContent(type="text", text="No tools found in workspace.")
 
-    tool_list = []
+    tools = []
     for tool in response.tools:
-        tool_type = tool.tool_config.type if hasattr(tool.tool_config, "type") else "unknown"
-        tool_name = tool.tool_config.name if hasattr(tool.tool_config, "name") else "unnamed"
-        tool_list.append(f"- {tool_name} (ID: {tool.id}, Type: {tool_type})")
-
-    formatted_list = "\n".join(tool_list)
+        tools.append(
+            f"- {getattr(tool.tool_config, 'name', 'unnamed')}"
+            f" (ID: {tool.id}, Type: {getattr(tool.tool_config, 'type', 'unknown')})"
+        )
+    txt = '\n'.join(tools)
     return TextContent(
         type="text",
-        text=f"Workspace Tools ({len(response.tools)} total):\n{formatted_list}",
+        text=f"Workspace Tools ({len(response.tools)} total):\n{txt}",
     )
 
 
@@ -356,16 +354,14 @@ def create_webhook_tool(
             required=request_body_required,
         )
 
-    headers_dict = None
-    if request_headers:
-        headers_dict = {k: {"type": "value", "value": v} for k, v in request_headers.items()}
+    headers_dict = dict(request_headers) if request_headers else {}
 
     api_schema = WebhookToolApiSchemaConfigInput(
         url=url,
         method=method,
-        request_headers=headers_dict,
-        path_params_schema=path_params_schema,
-        query_params_schema=query_params_schema,
+        request_headers=request_headers or {},        # Empty dict
+        path_params_schema=path_params_schema or {},  # Empty dict
+        query_params_schema=query_params_schema,      # Keep as None if not provided
         request_body_schema=request_body_schema,
     )
 
@@ -477,36 +473,44 @@ def update_tool(
     method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] | None = None,
     response_timeout_secs: int | None = None,
 ) -> TextContent:
+    """Update an existing tool's configuration."""
     existing_tool = client.conversational_ai.tools.get(tool_id=tool_id)
     existing_config = existing_tool.tool_config
-    tool_type = existing_config.type if hasattr(existing_config, "type") else "unknown"
+    tool_type = getattr(existing_config, "type", "unknown")
 
     if tool_type == "webhook":
-        existing_schema = existing_config.api_schema if hasattr(existing_config, "api_schema") else None
-
+        existing_schema = getattr(existing_config, "api_schema", None)
         new_api_schema = WebhookToolApiSchemaConfigInput(
-            url=url if url else (existing_schema.url if existing_schema else ""),
-            method=method if method else (existing_schema.method if existing_schema and hasattr(existing_schema, "method") else None),
-            request_headers=existing_schema.request_headers if existing_schema and hasattr(existing_schema, "request_headers") else None,
-            path_params_schema=existing_schema.path_params_schema if existing_schema and hasattr(existing_schema, "path_params_schema") else None,
-            query_params_schema=existing_schema.query_params_schema if existing_schema and hasattr(existing_schema, "query_params_schema") else None,
-            request_body_schema=existing_schema.request_body_schema if existing_schema and hasattr(existing_schema, "request_body_schema") else None,
+            url=url or getattr(existing_schema, "url", ""),
+            method=method or getattr(existing_schema, "method", "GET"),
+            request_headers=Schemas.transform(getattr(existing_schema, "request_headers", None)) or {},
+            path_params_schema=Schemas.transform(getattr(existing_schema, "path_params_schema", None)) or {},
+            query_params_schema=Schemas.convert(
+                getattr(existing_schema, "query_params_schema", None),
+                QueryParamsJsonSchema,
+            ),
+            request_body_schema=Schemas.convert(
+                getattr(existing_schema, "request_body_schema", None),
+                ObjectJsonSchemaPropertyInput,
+            ),
         )
 
         tool_config = ToolRequestModelToolConfig_Webhook(
-            name=name if name else existing_config.name,
-            description=description if description else existing_config.description,
+            name=name or existing_config.name,
+            description=description or existing_config.description,
             api_schema=new_api_schema,
-            response_timeout_secs=response_timeout_secs if response_timeout_secs else (existing_config.response_timeout_secs if hasattr(existing_config, "response_timeout_secs") else None),
+            response_timeout_secs=response_timeout_secs or getattr(existing_config, "response_timeout_secs", None),
         )
+
     elif tool_type == "client":
         tool_config = ToolRequestModelToolConfig_Client(
-            name=name if name else existing_config.name,
-            description=description if description else existing_config.description,
-            expects_response=existing_config.expects_response if hasattr(existing_config, "expects_response") else False,
-            parameters=existing_config.parameters if hasattr(existing_config, "parameters") else None,
-            response_timeout_secs=response_timeout_secs if response_timeout_secs else (existing_config.response_timeout_secs if hasattr(existing_config, "response_timeout_secs") else None),
+            name=name or existing_config.name,
+            description=description or existing_config.description,
+            expects_response=getattr(existing_config, "expects_response", False),
+            parameters=Schemas.transform(getattr(existing_config, "parameters", None)),
+            response_timeout_secs=response_timeout_secs or getattr(existing_config, "response_timeout_secs", None),
         )
+
     else:
         make_error(f"Cannot update tool of type: {tool_type}")
         return TextContent(type="text", text="")
@@ -631,9 +635,9 @@ def remove_tool_from_agent(agent_id: str, tool_id: str) -> TextContent:
 
         existing_tool_ids = []
         if agent.conversation_config and agent.conversation_config.agent:
-            prompt_config = agent.conversation_config.agent
-            if hasattr(prompt_config, "tool_ids") and prompt_config.tool_ids:
-                existing_tool_ids = list(prompt_config.tool_ids)
+            prompt = getattr(agent.conversation_config.agent, "prompt", None)
+            if prompt and getattr(prompt, "tool_ids", None):
+                existing_tool_ids = list(prompt.tool_ids)
 
         if tool_id not in existing_tool_ids:
             return TextContent(

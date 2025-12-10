@@ -16,6 +16,30 @@ from mcp.types import (
 class ElevenLabsMcpError(Exception):
     pass
 
+class Schemas:
+    @staticmethod
+    def convert(output_schema, input_class, default=None):
+        """Generic converter using Pydantic's model_dump/model_validate."""
+        if output_schema is None:
+            return default
+
+        data = output_schema.model_dump(exclude_none=True) if hasattr(output_schema, "model_dump") else dict(output_schema)
+        return input_class.model_validate(data)
+
+    @staticmethod
+    def transform(obj):
+        """Recursively convert to plain dict, stripping Pydantic wrapper types."""
+        if obj is None:
+            return None
+
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump(exclude_none=True)
+
+        if isinstance(obj, dict):
+            return {k: Schemas.transform(v) for k, v in obj.items()}
+
+        return obj
+
 
 def make_error(error_text: str):
     raise ElevenLabsMcpError(error_text)
