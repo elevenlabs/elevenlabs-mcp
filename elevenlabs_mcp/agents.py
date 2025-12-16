@@ -6,7 +6,7 @@ server tools (webhooks and client tools).
 """
 
 from datetime import datetime
-from typing import TypedDict, NotRequired
+from typing_extensions import TypedDict, NotRequired
 from io import BytesIO
 
 from elevenlabs.types import (
@@ -751,13 +751,13 @@ def remove_tool_from_agent(agent_id: str, tool_id: str) -> TextContent:
                 )
             ),
         )
-        return TextContent(
-            type="text",
-            text=f"Successfully removed tool {tool_id} from agent {agent_id}.",
-        )
     except Exception as e:
         make_error(f"Failed to remove tool from agent: {str(e)}")
-        return TextContent(type="text", text="")
+
+    return TextContent(
+        type="text",
+        text=f"Successfully removed tool {tool_id} from agent {agent_id}.",
+    )
 
 
 @mcp.tool(description="Get a list of agents that are using a specific tool")
