@@ -6,23 +6,111 @@ server tools (webhooks and client tools).
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import TypedDict, NotRequired
 from io import BytesIO
 
 from elevenlabs.types import (
+    AgentConfig,
+    ConversationalConfig,
+    DynamicVariableAssignment,
+    DynamicVariablesConfig,
+    DynamicVariablesConfigDynamicVariablePlaceholdersValue,
+    LiteralJsonSchemaProperty,
+    ObjectJsonSchemaPropertyInput,
+    PromptAgentApiModelOutput,
+    QueryParamsJsonSchema,
     ToolRequestModel,
     ToolRequestModelToolConfig_Client,
     ToolRequestModelToolConfig_Webhook,
     WebhookToolApiSchemaConfigInput,
-    ObjectJsonSchemaPropertyInput,
-    LiteralJsonSchemaProperty,
-    QueryParamsJsonSchema,
+    WebhookToolApiSchemaConfigInputMethod,
+    WebhookToolApiSchemaConfigInputRequestHeadersValue,
 )
 from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
 from elevenlabs_mcp.mcp import mcp, client, DEFAULT_VOICE_ID
-from elevenlabs_mcp.utils import Schemas, make_error, handle_input_file
+from elevenlabs_mcp.utils import make_error, handle_input_file
 from mcp.types import TextContent
+
+
+class WebhookConfig(TypedDict):
+    """Configuration for webhook tool creation.
+
+    Attributes:
+        name: The name of the tool (used by the LLM to identify when to call it)
+        description: A detailed description of what the tool does
+        url: The webhook URL. May include path parameters using {param} syntax
+        method: HTTP method (GET, POST, PUT, DELETE, PATCH). Defaults to GET.
+        response_timeout_secs: Optional timeout in seconds for the webhook response
+        disable_interruptions: Whether to disable interruptions while tool is running
+        force_pre_tool_speech: Force agent speech before tool execution
+    """
+    url: str
+    name: str
+    description: str
+    method: NotRequired[WebhookToolApiSchemaConfigInputMethod]
+    response_timeout_secs: NotRequired[int]
+    disable_interruptions: NotRequired[bool]
+    force_pre_tool_speech: NotRequired[bool]
+
+
+class ClientToolConfig(TypedDict):
+    """Configuration for client tool creation.
+
+    Attributes:
+        name: The name of the tool (used by the LLM to identify when to call it)
+        description: A detailed description of what the tool does
+        expects_response: Whether the tool expects a response from the client
+        response_timeout_secs: Optional timeout in seconds for the client response
+        disable_interruptions: Whether to disable interruptions while tool is running
+        force_pre_tool_speech: Force agent speech before tool execution
+    """
+    name: str
+    description: str
+    expects_response: NotRequired[bool]
+    response_timeout_secs: NotRequired[int]
+    disable_interruptions: NotRequired[bool]
+    force_pre_tool_speech: NotRequired[bool]
+
+
+class UpdateWebhookConfig(TypedDict):
+    """Configuration for updating a webhook tool. All fields are optional.
+
+    Attributes:
+        name: New name for the tool
+        description: New description for the tool
+        url: New webhook URL
+        method: New HTTP method
+        response_timeout_secs: New timeout in seconds
+        disable_interruptions: Whether to disable interruptions
+        force_pre_tool_speech: Force agent speech before execution
+    """
+    url: NotRequired[str]
+    name: NotRequired[str]
+    description: NotRequired[str]
+    method: NotRequired[WebhookToolApiSchemaConfigInputMethod]
+    response_timeout_secs: NotRequired[int]
+    disable_interruptions: NotRequired[bool]
+    force_pre_tool_speech: NotRequired[bool]
+
+
+class UpdateClientToolConfig(TypedDict):
+    """Configuration for updating a client tool. All fields are optional.
+
+    Attributes:
+        name: New name for the tool
+        description: New description for the tool
+        expects_response: Whether the tool expects a response
+        response_timeout_secs: New timeout in seconds
+        disable_interruptions: Whether to disable interruptions
+        force_pre_tool_speech: Force agent speech before execution
+    """
+    name: NotRequired[str]
+    description: NotRequired[str]
+    expects_response: NotRequired[bool]
+    response_timeout_secs: NotRequired[int]
+    disable_interruptions: NotRequired[bool]
+    force_pre_tool_speech: NotRequired[bool]
 
 
 @mcp.tool(
@@ -190,7 +278,6 @@ def list_agents() -> TextContent:
         TextContent with a formatted list of available agents
     """
     response = client.conversational_ai.agents.list()
-
     if not response.agents:
         return TextContent(type="text", text="No agents found.")
 
@@ -210,15 +297,20 @@ def get_agent(agent_id: str) -> TextContent:
     Returns:
         TextContent with detailed information about the agent
     """
-    response = client.conversational_ai.agents.get(agent_id=agent_id)
-
     voice_info = "None"
+    response = client.conversational_ai.agents.get(agent_id=agent_id)
     if response.conversation_config.tts:
         voice_info = f"Voice ID: {response.conversation_config.tts.voice_id}"
 
+    ts = datetime.fromtimestamp(response.metadata.created_at_unix_secs)\
+                 .strftime('%Y-%m-%d %H:%M:%S')
     return TextContent(
         type="text",
-        text=f"Agent Details: Name: {response.name}, Agent ID: {response.agent_id}, Voice Configuration: {voice_info}, Created At: {datetime.fromtimestamp(response.metadata.created_at_unix_secs).strftime('%Y-%m-%d %H:%M:%S')}",
+        text="Agent Details: " +
+            f"Name: {response.name}, " +
+            f"Agent ID: {response.agent_id}, " +
+            f"Voice Configuration: {voice_info}, " +
+            f"Created At: {ts}",
     )
 
 
@@ -230,7 +322,6 @@ def list_workspace_tools() -> TextContent:
         TextContent with a formatted list of available tools
     """
     response = client.conversational_ai.tools.list()
-
     if not response.tools:
         return TextContent(type="text", text="No tools found in workspace.")
 
@@ -249,36 +340,26 @@ def list_workspace_tools() -> TextContent:
 
 @mcp.tool(description="Get details about a specific tool")
 def get_tool(tool_id: str) -> TextContent:
-    """Get details about a specific tool in the workspace.
-
-    Args:
-        tool_id: The ID of the tool to retrieve
-
-    Returns:
-        TextContent with detailed information about the tool
-    """
-    response = client.conversational_ai.tools.get(tool_id=tool_id)
-
-    config = response.tool_config
-    tool_type = config.type if hasattr(config, "type") else "unknown"
+    tool = client.conversational_ai.tools.get(tool_id=tool_id)
+    config = tool.tool_config
+    schema = getattr(config, "api_schema")
 
     details = [
-        f"Tool ID: {response.id}",
-        f"Type: {tool_type}",
-        f"Name: {config.name}",
+        f"Tool ID: {tool.id}",
+        f"Type: {getattr(config, 'type', 'unknown')}",
+        f"Name: {getattr(config, 'name', 'unnamed')}",
     ]
 
-    if hasattr(config, "description") and config.description:
-        details.append(f"Description: {config.description}")
+    if desc := getattr(config, "description", None):
+        details.append(f"Description: {desc}")
 
-    if tool_type == "webhook" and hasattr(config, "api_schema"):
-        schema = config.api_schema
-        details.append(f"URL: {schema.url}")
-        if hasattr(schema, "method") and schema.method:
-            details.append(f"Method: {schema.method}")
+    if getattr(config, "type", "unknown") == "webhook" and schema:
+        details.append(f"URL: {getattr(schema, 'url', '')}")
+        if method := getattr(schema, "method", None):
+            details.append(f"Method: {method}")
 
-    if hasattr(config, "response_timeout_secs") and config.response_timeout_secs:
-        details.append(f"Response Timeout: {config.response_timeout_secs}s")
+    if timeout := getattr(config, "response_timeout_secs", None):
+        details.append(f"Response Timeout: {timeout}s")
 
     return TextContent(type="text", text="\n".join(details))
 
@@ -291,95 +372,53 @@ def get_tool(tool_id: str) -> TextContent:
     ⚠️ COST WARNING: Creating tools may affect your workspace configuration. Only use when explicitly requested.
 
     Args:
-        name: The name of the tool (used by the LLM to identify when to call it)
-        description: A detailed description of what the tool does and when it should be used
-        url: The webhook URL. May include path parameters using {param} syntax, e.g., https://api.example.com/users/{user_id}
-        method: HTTP method (GET, POST, PUT, DELETE, PATCH). Defaults to GET.
-        request_headers: Optional dict of header name to header value for static headers
-        path_params: Optional dict of path parameter names to their descriptions (for parameters in the URL like {user_id})
-        query_params: Optional dict of query parameter names to their descriptions
-        request_body_properties: Optional dict of body property names to their descriptions (for POST/PUT/PATCH requests)
-        request_body_required: Optional list of required body property names
-        response_timeout_secs: Optional timeout in seconds for the webhook response
+        config: WebhookConfig with basic settings (name, description, url, method, timeouts, execution options)
+        headers: Optional dict of header name to WebhookToolApiSchemaConfigInputRequestHeadersValue (str, secret, or dynamic var)
+        urlparams: Optional dict of URL path parameter names to LiteralJsonSchemaProperty (for {param} in URL)
+        qparams: Optional QueryParamsJsonSchema for query parameters
+        body: Optional ObjectJsonSchemaPropertyInput for request body schema
+        dynamic_vars: Optional dict of dynamic variable names to placeholder values
+        dynamic_vars_assign: Optional list of DynamicVariableAssignment for extracting values from response
 
     Returns:
         TextContent with the created tool details
     """
 )
 def create_webhook_tool(
-    name: str,
-    description: str,
-    url: str,
-    method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] = "GET",
-    request_headers: dict[str, str] | None = None,
-    path_params: dict[str, str] | None = None,
-    query_params: dict[str, str] | None = None,
-    request_body_properties: dict[str, str] | None = None,
-    request_body_required: list[str] | None = None,
-    response_timeout_secs: int | None = None,
+    config: WebhookConfig,
+    headers: dict[str, WebhookToolApiSchemaConfigInputRequestHeadersValue] | None = None,
+    urlparams: dict[str, LiteralJsonSchemaProperty] | None = None,
+    qparams: QueryParamsJsonSchema | None = None,
+    body: ObjectJsonSchemaPropertyInput | None = None,
+    dynamic_vars: dict[str, DynamicVariablesConfigDynamicVariablePlaceholdersValue] | None = None,
+    dynamic_vars_assign: list[DynamicVariableAssignment] | None = None,
 ) -> TextContent:
-    path_params_schema = None
-    if path_params:
-        path_params_schema = {
-            param_name: LiteralJsonSchemaProperty(
-                type="string",
-                description=param_desc,
-            )
-            for param_name, param_desc in path_params.items()
-        }
-
-    query_params_schema = None
-    if query_params:
-        query_params_schema = QueryParamsJsonSchema(
-            type="object",
-            properties={
-                param_name: LiteralJsonSchemaProperty(
-                    type="string",
-                    description=param_desc,
-                )
-                for param_name, param_desc in query_params.items()
-            },
-        )
-
-    request_body_schema = None
-    if request_body_properties:
-        request_body_schema = ObjectJsonSchemaPropertyInput(
-            type="object",
-            properties={
-                prop_name: LiteralJsonSchemaProperty(
-                    type="string",
-                    description=prop_desc,
-                )
-                for prop_name, prop_desc in request_body_properties.items()
-            },
-            required=request_body_required,
-        )
-
-    headers_dict = dict(request_headers) if request_headers else {}
-
-    api_schema = WebhookToolApiSchemaConfigInput(
-        url=url,
-        method=method,
-        request_headers=request_headers or {},        # Empty dict
-        path_params_schema=path_params_schema or {},  # Empty dict
-        query_params_schema=query_params_schema,      # Keep as None if not provided
-        request_body_schema=request_body_schema,
-    )
-
-    tool_config = ToolRequestModelToolConfig_Webhook(
-        name=name,
-        description=description,
-        api_schema=api_schema,
-        response_timeout_secs=response_timeout_secs,
-    )
-
-    request = ToolRequestModel(tool_config=tool_config)
-
     try:
-        response = client.conversational_ai.tools.create(request=request)
+        tool = client.conversational_ai.tools.create(
+            request=ToolRequestModel(
+                tool_config=ToolRequestModelToolConfig_Webhook(
+                    name=config["name"],
+                    description=config["description"],
+                    api_schema=WebhookToolApiSchemaConfigInput(
+                        url=config["url"],
+                        method=config.get("method", "GET"),
+                        request_headers=headers,
+                        path_params_schema=urlparams,
+                        query_params_schema=qparams,
+                        request_body_schema=body,
+                    ),
+                    response_timeout_secs=config.get("response_timeout_secs"),
+                    disable_interruptions=config.get("disable_interruptions"),
+                    force_pre_tool_speech=config.get("force_pre_tool_speech"),
+                    dynamic_variables=DynamicVariablesConfig(dynamic_variable_placeholders=dynamic_vars) if dynamic_vars else None,
+                    assignments=dynamic_vars_assign,
+                )
+            )
+        )
         return TextContent(
             type="text",
-            text=f"Successfully created webhook tool.\nTool ID: {response.id}\nName: {name}\nURL: {url}\nMethod: {method}",
+            text="Successfully created webhook tool." +
+                 f"\nTool ID: {tool.id}\nName: {config['name']}\nURL: {config['url']}\nMethod: {config.get('method', 'GET')}",
         )
     except Exception as e:
         make_error(f"Failed to create webhook tool: {str(e)}")
@@ -395,54 +434,42 @@ def create_webhook_tool(
     ⚠️ COST WARNING: Creating tools may affect your workspace configuration. Only use when explicitly requested.
 
     Args:
-        name: The name of the tool (used by the LLM to identify when to call it)
-        description: A detailed description of what the tool does and when it should be used
-        expects_response: Whether the tool expects a response from the client. Defaults to False.
-        parameters_properties: Optional dict of parameter names to their descriptions
-        parameters_required: Optional list of required parameter names
-        response_timeout_secs: Optional timeout in seconds for the client response
+        config: ClientToolConfig with basic settings (name, description, expects_response, timeouts, execution options)
+        parameters: Optional ObjectJsonSchemaPropertyInput for tool parameters schema
+        dynamic_vars: Optional dict of dynamic variable names to placeholder values
+        dynamic_vars_assign: Optional list of DynamicVariableAssignment for extracting values from response
 
     Returns:
         TextContent with the created tool details
     """
 )
 def create_client_tool(
-    name: str,
-    description: str,
-    expects_response: bool = False,
-    parameters_properties: dict[str, str] | None = None,
-    parameters_required: list[str] | None = None,
-    response_timeout_secs: int | None = None,
+    config: ClientToolConfig,
+    parameters: ObjectJsonSchemaPropertyInput | None = None,
+    dynamic_vars: dict[str, DynamicVariablesConfigDynamicVariablePlaceholdersValue] | None = None,
+    dynamic_vars_assign: list[DynamicVariableAssignment] | None = None,
 ) -> TextContent:
-    parameters = None
-    if parameters_properties:
-        parameters = ObjectJsonSchemaPropertyInput(
-            type="object",
-            properties={
-                prop_name: LiteralJsonSchemaProperty(
-                    type="string",
-                    description=prop_desc,
-                )
-                for prop_name, prop_desc in parameters_properties.items()
-            },
-            required=parameters_required,
-        )
-
-    tool_config = ToolRequestModelToolConfig_Client(
-        name=name,
-        description=description,
-        expects_response=expects_response,
-        parameters=parameters,
-        response_timeout_secs=response_timeout_secs,
-    )
-
-    request = ToolRequestModel(tool_config=tool_config)
-
     try:
-        response = client.conversational_ai.tools.create(request=request)
+        tool = client.conversational_ai.tools.create(
+            request=ToolRequestModel(
+                tool_config=ToolRequestModelToolConfig_Client(
+                    name=config["name"],
+                    description=config["description"],
+                    expects_response=config.get("expects_response", False),
+                    parameters=parameters,
+                    response_timeout_secs=config.get("response_timeout_secs"),
+                    disable_interruptions=config.get("disable_interruptions"),
+                    force_pre_tool_speech=config.get("force_pre_tool_speech"),
+                    dynamic_variables=DynamicVariablesConfig(dynamic_variable_placeholders=dynamic_vars) if dynamic_vars else None,
+                    assignments=dynamic_vars_assign,
+                )
+            )
+        )
         return TextContent(
             type="text",
-            text=f"Successfully created client tool.\nTool ID: {response.id}\nName: {name}\nExpects Response: {expects_response}",
+            text="Successfully created client tool." +
+                 f"\nTool ID: {tool.id}\nName: {config['name']}" +
+                 f"\nExpects Response: {config.get('expects_response', False)}",
         )
     except Exception as e:
         make_error(f"Failed to create client tool: {str(e)}")
@@ -450,82 +477,163 @@ def create_client_tool(
 
 
 @mcp.tool(
-    description="""Update an existing tool's configuration.
+    description="""Update an existing webhook tool's configuration.
 
     ⚠️ COST WARNING: Updating tools may affect agents using this tool. Only use when explicitly requested.
 
     Args:
-        tool_id: The ID of the tool to update
-        name: Optional new name for the tool
-        description: Optional new description for the tool
-        url: Optional new URL (for webhook tools only)
-        method: Optional new HTTP method (for webhook tools only)
-        response_timeout_secs: Optional new timeout in seconds
+        tool_id: The ID of the webhook tool to update
+        config: UpdateWebhookConfig with fields to update (all optional)
+        headers: Optional new headers dict
+        urlparams: Optional new path params schema
+        qparams: Optional new query params schema
+        body: Optional new body schema
+        dynamic_vars: Optional new dynamic variables
+        dynamic_vars_assign: Optional new dynamic variable assignments
 
     Returns:
         TextContent with the updated tool details
     """
 )
-def update_tool(
+def update_webhook_tool(
     tool_id: str,
-    name: str | None = None,
-    description: str | None = None,
-    url: str | None = None,
-    method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] | None = None,
-    response_timeout_secs: int | None = None,
+    config: UpdateWebhookConfig | None = None,
+    headers: dict[str, WebhookToolApiSchemaConfigInputRequestHeadersValue] | None = None,
+    urlparams: dict[str, LiteralJsonSchemaProperty] | None = None,
+    qparams: QueryParamsJsonSchema | None = None,
+    body: ObjectJsonSchemaPropertyInput | None = None,
+    dynamic_vars: dict[str, DynamicVariablesConfigDynamicVariablePlaceholdersValue] | None = None,
+    dynamic_vars_assign: list[DynamicVariableAssignment] | None = None,
 ) -> TextContent:
-    """Update an existing tool's configuration."""
-    existing_tool = client.conversational_ai.tools.get(tool_id=tool_id)
-    existing_config = existing_tool.tool_config
-    tool_type = getattr(existing_config, "type", "unknown")
+    config = config or {}
+    curr = client.conversational_ai.tools.get(tool_id=tool_id)
+    schema = getattr(curr.tool_config, "api_schema", None)
 
-    if tool_type == "webhook":
-        existing_schema = getattr(existing_config, "api_schema", None)
-        new_api_schema = WebhookToolApiSchemaConfigInput(
-            url=url or getattr(existing_schema, "url", ""),
-            method=method or getattr(existing_schema, "method", "GET"),
-            request_headers=Schemas.transform(getattr(existing_schema, "request_headers", None)) or {},
-            path_params_schema=Schemas.transform(getattr(existing_schema, "path_params_schema", None)) or {},
-            query_params_schema=Schemas.convert(
-                getattr(existing_schema, "query_params_schema", None),
-                QueryParamsJsonSchema,
-            ),
-            request_body_schema=Schemas.convert(
-                getattr(existing_schema, "request_body_schema", None),
-                ObjectJsonSchemaPropertyInput,
-            ),
-        )
-
-        tool_config = ToolRequestModelToolConfig_Webhook(
-            name=name or existing_config.name,
-            description=description or existing_config.description,
-            api_schema=new_api_schema,
-            response_timeout_secs=response_timeout_secs or getattr(existing_config, "response_timeout_secs", None),
-        )
-
-    elif tool_type == "client":
-        tool_config = ToolRequestModelToolConfig_Client(
-            name=name or existing_config.name,
-            description=description or existing_config.description,
-            expects_response=getattr(existing_config, "expects_response", False),
-            parameters=Schemas.transform(getattr(existing_config, "parameters", None)),
-            response_timeout_secs=response_timeout_secs or getattr(existing_config, "response_timeout_secs", None),
-        )
-
-    else:
-        make_error(f"Cannot update tool of type: {tool_type}")
-        return TextContent(type="text", text="")
-
-    request = ToolRequestModel(tool_config=tool_config)
+    if getattr(curr.tool_config, "type") != "webhook":
+        make_error(f"Tool {tool_id} is not a webhook tool")
 
     try:
-        response = client.conversational_ai.tools.update(tool_id=tool_id, request=request)
+        modified = client.conversational_ai.tools.update(
+            tool_id=tool_id,
+            request=ToolRequestModel(
+                tool_config=ToolRequestModelToolConfig_Webhook(
+                    name=config.get("name", getattr(curr.tool_config, "name")),
+                    description=config.get("description", getattr(curr.tool_config, "description")),
+                    api_schema=WebhookToolApiSchemaConfigInput(
+                        url=config.get("url", getattr(schema, "url", "")),
+                        method=config.get("method", getattr(schema, "method", "GET")),
+                        request_headers=headers or getattr(schema, "request_headers"),
+                        path_params_schema=urlparams or getattr(schema, "path_params_schema"),
+                        query_params_schema=qparams or getattr(schema, "query_params_schema"),
+                        request_body_schema=body or getattr(schema, "request_body_schema"),
+                    ),
+                    response_timeout_secs=(
+                        config.get("response_timeout_secs")
+                        if "response_timeout_secs" in config
+                        else getattr(curr.tool_config, "response_timeout_secs")
+                    ),
+                    disable_interruptions=(
+                        config.get("disable_interruptions")
+                        if "disable_interruptions" in config
+                        else getattr(curr.tool_config, "disable_interruptions")
+                    ),
+                    force_pre_tool_speech=(
+                        config.get("force_pre_tool_speech")
+                        if "force_pre_tool_speech" in config
+                        else getattr(curr.tool_config, "force_pre_tool_speech")
+                    ),
+                    dynamic_variables=(
+                        DynamicVariablesConfig(dynamic_variable_placeholders=dynamic_vars)
+                        if dynamic_vars is not None
+                        else getattr(curr.tool_config, "dynamic_variables")
+                    ),
+                    assignments=dynamic_vars_assign or getattr(curr.tool_config, "assignments"),
+                )
+            ),
+        )
         return TextContent(
             type="text",
-            text=f"Successfully updated tool.\nTool ID: {response.id}\nName: {response.tool_config.name}",
+            text="Successfully updated webhook tool." +
+                 f"\nTool ID: {modified.id}\nName: {getattr(modified.tool_config, 'name')}",
         )
     except Exception as e:
-        make_error(f"Failed to update tool: {str(e)}")
+        make_error(f"Failed to update webhook tool: {str(e)}")
+        return TextContent(type="text", text="")
+
+
+@mcp.tool(
+    description="""Update an existing client tool's configuration.
+
+    ⚠️ COST WARNING: Updating tools may affect agents using this tool. Only use when explicitly requested.
+
+    Args:
+        tool_id: The ID of the client tool to update
+        config: UpdateClientToolConfig with fields to update (all optional)
+        parameters: Optional new parameters schema
+        dynamic_vars: Optional new dynamic variables
+        dynamic_vars_assign: Optional new dynamic variable assignments
+
+    Returns:
+        TextContent with the updated tool details
+    """
+)
+def update_client_tool(
+    tool_id: str,
+    config: UpdateClientToolConfig | None = None,
+    parameters: ObjectJsonSchemaPropertyInput | None = None,
+    dynamic_vars: dict[str, DynamicVariablesConfigDynamicVariablePlaceholdersValue] | None = None,
+    dynamic_vars_assign: list[DynamicVariableAssignment] | None = None,
+) -> TextContent:
+    config = config or {}
+    curr = client.conversational_ai.tools.get(tool_id=tool_id)
+
+    if getattr(curr.tool_config, "type") != "client":
+        make_error(f"Tool {tool_id} is not a client tool")
+
+    try:
+        modified = client.conversational_ai.tools.update(
+            tool_id=tool_id,
+            request=ToolRequestModel(
+                tool_config=ToolRequestModelToolConfig_Client(
+                    name=config.get("name", getattr(curr.tool_config, "name")),
+                    description=config.get("description", getattr(curr.tool_config, "description")),
+                    parameters=parameters or getattr(curr.tool_config, "parameters"),
+                    expects_response=(
+                        config.get("expects_response")
+                        if "expects_response" in config
+                        else getattr(curr.tool_config, "expects_response", False)
+                    ),
+                    response_timeout_secs=(
+                        config.get("response_timeout_secs")
+                        if "response_timeout_secs" in config
+                        else getattr(curr.tool_config, "response_timeout_secs")
+                    ),
+                    disable_interruptions=(
+                        config.get("disable_interruptions")
+                        if "disable_interruptions" in config
+                        else getattr(curr.tool_config, "disable_interruptions")
+                    ),
+                    force_pre_tool_speech=(
+                        config.get("force_pre_tool_speech")
+                        if "force_pre_tool_speech" in config
+                        else getattr(curr.tool_config, "force_pre_tool_speech")
+                    ),
+                    dynamic_variables=(
+                        DynamicVariablesConfig(dynamic_variable_placeholders=dynamic_vars)
+                        if dynamic_vars is not None
+                        else getattr(curr.tool_config, "dynamic_variables")
+                    ),
+                    assignments=dynamic_vars_assign if dynamic_vars_assign else getattr(curr.tool_config, "assignments"),
+                )
+            ),
+        )
+        return TextContent(
+            type="text",
+            text="Successfully updated client tool." +
+                 f"\nTool ID: {modified.id}\nName: {getattr(modified.tool_config, 'name')}",
+        )
+    except Exception as e:
+        make_error(f"Failed to update client tool: {str(e)}")
         return TextContent(type="text", text="")
 
 
@@ -543,17 +651,15 @@ def update_tool(
 )
 def delete_tool(tool_id: str) -> TextContent:
     try:
-        dependent_agents = client.conversational_ai.tools.get_dependent_agents(tool_id=tool_id)
-        if dependent_agents.agents and len(dependent_agents.agents) > 0:
-            agent_names = ", ".join(agent.name for agent in dependent_agents.agents)
+        deps = client.conversational_ai.tools.get_dependent_agents(tool_id=tool_id)
+        if deps.agents and len(deps.agents) > 0:
             return TextContent(
                 type="text",
-                text=f"Cannot delete tool. It is being used by the following agents: {agent_names}. Please remove the tool from these agents first.",
+                text="Tool currently in use by the following agents: " +
+                    f"{', '.join(agent.name for agent in deps.agents)}. " +
+                    "Please remove the tool from these agents first.",
             )
-    except Exception:
-        pass
 
-    try:
         client.conversational_ai.tools.delete(tool_id=tool_id)
         return TextContent(
             type="text",
@@ -580,34 +686,27 @@ def delete_tool(tool_id: str) -> TextContent:
     """
 )
 def add_tool_to_agent(agent_id: str, tool_id: str) -> TextContent:
-    try:
-        agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    prompt = getattr(agent.conversation_config.agent, "prompt")
+    tool_ids = list(getattr(prompt, "tool_ids") or [])
 
-        existing_tool_ids = []
-        if agent.conversation_config and agent.conversation_config.agent:
-            prompt_config = agent.conversation_config.agent
-            if hasattr(prompt_config, "tool_ids") and prompt_config.tool_ids:
-                existing_tool_ids = list(prompt_config.tool_ids)
-
-        if tool_id in existing_tool_ids:
-            return TextContent(
-                type="text",
-                text=f"Tool {tool_id} is already attached to agent {agent_id}.",
-            )
-
-        existing_tool_ids.append(tool_id)
-
-        client.conversational_ai.agents.update(
-            agent_id=agent_id,
-            conversation_config={
-                "agent": {
-                    "prompt": {
-                        "tool_ids": existing_tool_ids,
-                    }
-                }
-            },
+    if tool_id in tool_ids:
+        return TextContent(
+            type="text",
+            text=f"Tool {tool_id} is already attached to agent {agent_id}.",
         )
 
+    tool_ids.append(tool_id)
+
+    try:
+        client.conversational_ai.agents.update(
+            agent_id=agent_id,
+            conversation_config=ConversationalConfig(
+                agent=AgentConfig(
+                    prompt=PromptAgentApiModelOutput(tool_ids=tool_ids)
+                )
+            ),
+        )
         return TextContent(
             type="text",
             text=f"Successfully added tool {tool_id} to agent {agent_id}.",
@@ -631,34 +730,27 @@ def add_tool_to_agent(agent_id: str, tool_id: str) -> TextContent:
     """
 )
 def remove_tool_from_agent(agent_id: str, tool_id: str) -> TextContent:
-    try:
-        agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    prompt = getattr(getattr(agent.conversation_config, "agent", None), "prompt", None)
+    tool_ids: list[str] = list(getattr(prompt, "tool_ids", None) or [])
 
-        existing_tool_ids = []
-        if agent.conversation_config and agent.conversation_config.agent:
-            prompt = getattr(agent.conversation_config.agent, "prompt", None)
-            if prompt and getattr(prompt, "tool_ids", None):
-                existing_tool_ids = list(prompt.tool_ids)
-
-        if tool_id not in existing_tool_ids:
-            return TextContent(
-                type="text",
-                text=f"Tool {tool_id} is not attached to agent {agent_id}.",
-            )
-
-        existing_tool_ids.remove(tool_id)
-
-        client.conversational_ai.agents.update(
-            agent_id=agent_id,
-            conversation_config={
-                "agent": {
-                    "prompt": {
-                        "tool_ids": existing_tool_ids,
-                    }
-                }
-            },
+    if tool_id not in tool_ids:
+        return TextContent(
+            type="text",
+            text=f"Tool {tool_id} is not attached to agent {agent_id}.",
         )
 
+    tool_ids.remove(tool_id)
+
+    try:
+        client.conversational_ai.agents.update(
+            agent_id=agent_id,
+            conversation_config=ConversationalConfig(
+                agent=AgentConfig(
+                    prompt=PromptAgentApiModelOutput(tool_ids=tool_ids)
+                )
+            ),
+        )
         return TextContent(
             type="text",
             text=f"Successfully removed tool {tool_id} from agent {agent_id}.",
@@ -683,22 +775,24 @@ def get_tool_dependent_agents(
         TextContent with a list of dependent agents
     """
     try:
-        response = client.conversational_ai.tools.get_dependent_agents(
+        deps = client.conversational_ai.tools.get_dependent_agents(
             tool_id=tool_id,
-            page_size=min(page_size, 100),
+            page_size=min(page_size, 100)
         )
-
-        if not response.agents:
+        if not deps.agents:
             return TextContent(type="text", text="No agents are using this tool.")
 
         agents = ""
-        for agent in response.agents:
+        for agent in deps.agents:
             if getattr(agent, "type", "unknown") == "available":
-                agents = "\n".join(f"- {agent.name} (ID: {agent.id})" for agent in response.agents)
+                agents = "\n".join(
+                    f"- {getattr(agent, 'name', 'Unknown')} (ID: {getattr(agent, 'id', 'Unknown')})"
+                    for agent in deps.agents
+                )
 
         return TextContent(
             type="text",
-            text=f"Agents using this tool ({len(response.agents)} total):\n{agents}",
+            text=f"Agents using this tool ({len(deps.agents)} total):\n{agents}",
         )
     except Exception as e:
         make_error(f"Failed to get dependent agents: {str(e)}")
