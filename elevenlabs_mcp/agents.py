@@ -199,6 +199,7 @@ def list_agents() -> TextContent:
     )
     return TextContent(type="text", text=f"Available agents: {agents}")
 
+
 @mcp.tool(description="Get details about a specific conversational AI agent")
 def get_agent(agent_id: str) -> TextContent:
     """Get details about a specific conversational AI agent.
