@@ -520,7 +520,7 @@ def get_voice(voice_id: str) -> McpVoice:
 
 
 @mcp.tool(
-    annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Create an instant voice clone of a voice using provided audio files.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -577,7 +577,7 @@ def check_subscription() -> TextContent:
 
 
 @mcp.tool(
-    annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Create a conversational AI agent with custom configuration.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -656,7 +656,7 @@ def create_agent(
 
 
 @mcp.tool(
-    annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Add a knowledge base to ElevenLabs workspace. Allowed types are epub, pdf, docx, txt, html.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -1005,7 +1005,7 @@ def text_to_voice(
 
 
 @mcp.tool(
-    annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Add a generated voice to the voice library. Uses the voice ID from the `text_to_voice` tool.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
