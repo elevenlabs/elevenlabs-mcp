@@ -11,21 +11,22 @@ Each tool that makes an API call is marked with a cost warning. Please follow th
 Tools without cost warnings in their description are free to use as they only read existing data.
 """
 
-import httpx
-import os
 import base64
+import sys
+
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Literal, Union
-from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+
+from elevenlabs.play import play
+from elevenlabs.types import MusicPrompt
+from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 from mcp.types import (
     TextContent,
     Resource,
     EmbeddedResource,
 )
-from elevenlabs.client import ElevenLabs
-from elevenlabs.types import MusicPrompt
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
     make_error,
@@ -34,42 +35,16 @@ from elevenlabs_mcp.utils import (
     handle_input_file,
     parse_conversation_transcript,
     handle_large_text,
-    parse_location,
     get_mime_type,
     handle_output_mode,
     handle_multiple_files_output_mode,
     get_output_mode_description,
 )
-
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
-from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
+from elevenlabs_mcp.mcp import mcp, client, base_path, output_mode, DEFAULT_VOICE_ID
 
-from elevenlabs.play import play
-from elevenlabs_mcp import __version__
-from pathlib import Path
+import elevenlabs_mcp.agents  # noqa: F401 - registers agent and tools management MCP tools
 
-load_dotenv()
-api_key = os.getenv("ELEVENLABS_API_KEY")
-base_path = os.getenv("ELEVENLABS_MCP_BASE_PATH")
-output_mode = os.getenv("ELEVENLABS_MCP_OUTPUT_MODE", "files").strip().lower()
-DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
-
-if output_mode not in {"files", "resources", "both"}:
-    raise ValueError("ELEVENLABS_MCP_OUTPUT_MODE must be one of: 'files', 'resources', 'both'")
-if not api_key:
-    raise ValueError("ELEVENLABS_API_KEY environment variable is required")
-
-origin = parse_location(os.getenv("ELEVENLABS_API_RESIDENCY"))
-
-# Add custom client to ElevenLabs to set User-Agent header
-custom_client = httpx.Client(
-    headers={
-        "User-Agent": f"ElevenLabs-MCP/{__version__}",
-    },
-)
-
-client = ElevenLabs(api_key=api_key, httpx_client=custom_client, base_url=origin)
-mcp = FastMCP("ElevenLabs")
 
 
 def format_diarized_transcript(transcription) -> str:
@@ -206,7 +181,7 @@ def get_elevenlabs_resource(filename: str) -> Resource:
 
 @mcp.tool(
     description=f"""Convert text to speech with a given voice. {get_output_mode_description(output_mode)}.
-    
+
     Only one of voice_id or voice_name can be provided. If none are provided, the default voice will be used.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -395,7 +370,7 @@ def speech_to_text(
 
 @mcp.tool(
     description=f"""Convert text description of a sound effect to sound effect with a given duration. {get_output_mode_description(output_mode)}.
-    
+
     Duration must be between 0.5 and 5 seconds.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -560,204 +535,6 @@ def isolate_audio(
 def check_subscription() -> TextContent:
     subscription = client.user.subscription.get()
     return TextContent(type="text", text=f"{subscription.model_dump_json(indent=2)}")
-
-
-@mcp.tool(
-    description="""Create a conversational AI agent with custom configuration.
-
-    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-
-    Args:
-        name: Name of the agent
-        first_message: First message the agent will say i.e. "Hi, how can I help you today?"
-        system_prompt: System prompt for the agent
-        voice_id: ID of the voice to use for the agent
-        language: ISO 639-1 language code for the agent
-        llm: LLM to use for the agent
-        temperature: Temperature for the agent. The lower the temperature, the more deterministic the agent's responses will be. Range is 0 to 1.
-        max_tokens: Maximum number of tokens to generate.
-        asr_quality: Quality of the ASR. `high` or `low`.
-        model_id: ID of the ElevenLabs model to use for the agent.
-        optimize_streaming_latency: Optimize streaming latency. Range is 0 to 4.
-        stability: Stability for the agent. Range is 0 to 1.
-        similarity_boost: Similarity boost for the agent. Range is 0 to 1.
-        turn_timeout: Timeout for the agent to respond in seconds. Defaults to 7 seconds.
-        max_duration_seconds: Maximum duration of a conversation in seconds. Defaults to 600 seconds (10 minutes).
-        record_voice: Whether to record the agent's voice.
-        retention_days: Number of days to retain the agent's data.
-    """
-)
-def create_agent(
-    name: str,
-    first_message: str,
-    system_prompt: str,
-    voice_id: str | None = DEFAULT_VOICE_ID,
-    language: str = "en",
-    llm: str = "gemini-2.0-flash-001",
-    temperature: float = 0.5,
-    max_tokens: int | None = None,
-    asr_quality: str = "high",
-    model_id: str = "eleven_turbo_v2",
-    optimize_streaming_latency: int = 3,
-    stability: float = 0.5,
-    similarity_boost: float = 0.8,
-    turn_timeout: int = 7,
-    max_duration_seconds: int = 300,
-    record_voice: bool = True,
-    retention_days: int = 730,
-) -> TextContent:
-    conversation_config = create_conversation_config(
-        language=language,
-        system_prompt=system_prompt,
-        llm=llm,
-        first_message=first_message,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        asr_quality=asr_quality,
-        voice_id=voice_id,
-        model_id=model_id,
-        optimize_streaming_latency=optimize_streaming_latency,
-        stability=stability,
-        similarity_boost=similarity_boost,
-        turn_timeout=turn_timeout,
-        max_duration_seconds=max_duration_seconds,
-    )
-
-    platform_settings = create_platform_settings(
-        record_voice=record_voice,
-        retention_days=retention_days,
-    )
-
-    response = client.conversational_ai.agents.create(
-        name=name,
-        conversation_config=conversation_config,
-        platform_settings=platform_settings,
-    )
-
-    return TextContent(
-        type="text",
-        text=f"""Agent created successfully: Name: {name}, Agent ID: {response.agent_id}, System Prompt: {system_prompt}, Voice ID: {voice_id or "Default"}, Language: {language}, LLM: {llm}, You can use this agent ID for future interactions with the agent.""",
-    )
-
-
-@mcp.tool(
-    description="""Add a knowledge base to ElevenLabs workspace. Allowed types are epub, pdf, docx, txt, html.
-
-    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-
-    Args:
-        agent_id: ID of the agent to add the knowledge base to.
-        knowledge_base_name: Name of the knowledge base.
-        url: URL of the knowledge base.
-        input_file_path: Path to the file to add to the knowledge base.
-        text: Text to add to the knowledge base.
-    """
-)
-def add_knowledge_base_to_agent(
-    agent_id: str,
-    knowledge_base_name: str,
-    url: str | None = None,
-    input_file_path: str | None = None,
-    text: str | None = None,
-) -> TextContent:
-    provided_params = [
-        param for param in [url, input_file_path, text] if param is not None
-    ]
-    if len(provided_params) == 0:
-        make_error("Must provide either a URL, a file, or text")
-    if len(provided_params) > 1:
-        make_error("Must provide exactly one of: URL, file, or text")
-
-    if url is not None:
-        response = client.conversational_ai.knowledge_base.documents.create_from_url(
-            name=knowledge_base_name,
-            url=url,
-        )
-    else:
-        if text is not None:
-            text_bytes = text.encode("utf-8")
-            text_io = BytesIO(text_bytes)
-            text_io.name = "text.txt"
-            text_io.content_type = "text/plain"
-            file = text_io
-        elif input_file_path is not None:
-            path = handle_input_file(
-                file_path=input_file_path, audio_content_check=False
-            )
-            file = open(path, "rb")
-
-        response = client.conversational_ai.knowledge_base.documents.create_from_file(
-            name=knowledge_base_name,
-            file=file,
-        )
-
-    agent = client.conversational_ai.agents.get(agent_id=agent_id)
-
-    agent_config = agent.conversation_config.agent
-    knowledge_base_list = (
-        agent_config.get("prompt", {}).get("knowledge_base", []) if agent_config else []
-    )
-    knowledge_base_list.append(
-        KnowledgeBaseLocator(
-            type="file" if file else "url",
-            name=knowledge_base_name,
-            id=response.id,
-        )
-    )
-
-    if agent_config and "prompt" not in agent_config:
-        agent_config["prompt"] = {}
-    if agent_config:
-        agent_config["prompt"]["knowledge_base"] = knowledge_base_list
-
-    client.conversational_ai.agents.update(
-        agent_id=agent_id, conversation_config=agent.conversation_config
-    )
-    return TextContent(
-        type="text",
-        text=f"""Knowledge base created with ID: {response.id} and added to agent {agent_id} successfully.""",
-    )
-
-
-@mcp.tool(description="List all available conversational AI agents")
-def list_agents() -> TextContent:
-    """List all available conversational AI agents.
-
-    Returns:
-        TextContent with a formatted list of available agents
-    """
-    response = client.conversational_ai.agents.list()
-
-    if not response.agents:
-        return TextContent(type="text", text="No agents found.")
-
-    agent_list = ",".join(
-        f"{agent.name} (ID: {agent.agent_id})" for agent in response.agents
-    )
-
-    return TextContent(type="text", text=f"Available agents: {agent_list}")
-
-
-@mcp.tool(description="Get details about a specific conversational AI agent")
-def get_agent(agent_id: str) -> TextContent:
-    """Get details about a specific conversational AI agent.
-
-    Args:
-        agent_id: The ID of the agent to retrieve
-
-    Returns:
-        TextContent with detailed information about the agent
-    """
-    response = client.conversational_ai.agents.get(agent_id=agent_id)
-
-    voice_info = "None"
-    if response.conversation_config.tts:
-        voice_info = f"Voice ID: {response.conversation_config.tts.voice_id}"
-
-    return TextContent(
-        type="text",
-        text=f"Agent Details: Name: {response.name}, Agent ID: {response.agent_id}, Voice Configuration: {voice_info}, Created At: {datetime.fromtimestamp(response.metadata.created_at_unix_secs).strftime('%Y-%m-%d %H:%M:%S')}",
-    )
 
 
 @mcp.tool(
@@ -931,7 +708,7 @@ def speech_to_speech(
 
 @mcp.tool(
     description=f"""Create voice previews from a text prompt. Creates three previews with slight variations. {get_output_mode_description(output_mode)}.
-    
+
     If no text is provided, the tool will auto-generate text.
 
     Voice preview files are saved as: voice_design_(generated_voice_id)_(timestamp).mp3
