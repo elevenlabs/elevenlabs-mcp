@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 import tempfile
+from unittest.mock import patch
 from elevenlabs_mcp.utils import (
     ElevenLabsMcpError,
     make_error,
@@ -37,6 +38,64 @@ def test_make_output_path():
     with tempfile.TemporaryDirectory() as temp_dir:
         result = make_output_path(temp_dir)
         assert result == Path(temp_dir)
+        assert result.exists()
+        assert result.is_dir()
+
+
+def test_make_output_path_none_output_directory():
+    """Test with None as output_directory, should use base_path"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        result = make_output_path(None, temp_dir)
+        assert result == Path(temp_dir)
+        assert result.exists()
+        assert result.is_dir()
+
+
+def test_make_output_path_none_output_directory_none_base_path():
+    """Test with both None, should default to ~/Desktop"""
+    with tempfile.TemporaryDirectory() as temp_home:
+        mock_home = Path(temp_home)
+        with patch("elevenlabs_mcp.utils.Path.home", return_value=mock_home):
+            result = make_output_path(None, None)
+            assert result == mock_home / "Desktop"
+            assert result.exists()
+            assert result.is_dir()
+
+
+def test_make_output_path_relative_no_base_path():
+    """Test edge case: relative path with no base_path, should use ~/Desktop as base"""
+    with tempfile.TemporaryDirectory() as temp_home:
+        mock_home = Path(temp_home)
+        # Create Desktop directory so the parent exists
+        desktop_dir = mock_home / "Desktop"
+        desktop_dir.mkdir()
+        
+        with patch("elevenlabs_mcp.utils.Path.home", return_value=mock_home):
+            relative_subdir = "test_subdir"
+            expected = desktop_dir / relative_subdir
+            
+            result = make_output_path(relative_subdir, None)
+            assert result == expected
+            assert result.exists()
+            assert result.is_dir()
+
+
+def test_make_output_path_absolute_path():
+    """Test with absolute output_directory, should ignore base_path"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        absolute_path = Path(temp_dir) / "absolute_test"
+        result = make_output_path(str(absolute_path), "/some/ignored/base")
+        assert result == absolute_path
+        assert result.exists()
+        assert result.is_dir()
+
+
+def test_make_output_path_relative_with_base():
+    """Test with relative output_directory and base_path"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        relative_subdir = "subdir"
+        result = make_output_path(relative_subdir, temp_dir)
+        assert result == Path(temp_dir) / relative_subdir
         assert result.exists()
         assert result.is_dir()
 
