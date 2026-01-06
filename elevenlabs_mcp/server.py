@@ -23,6 +23,7 @@ from mcp.types import (
     TextContent,
     Resource,
     EmbeddedResource,
+    ToolAnnotations,
 )
 from elevenlabs.client import ElevenLabs
 from elevenlabs.types import MusicPrompt
@@ -205,6 +206,7 @@ def get_elevenlabs_resource(filename: str) -> Resource:
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description=f"""Convert text to speech with a given voice. {get_output_mode_description(output_mode)}.
     
     Only one of voice_id or voice_name can be provided. If none are provided, the default voice will be used.
@@ -321,6 +323,7 @@ def text_to_speech(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description=f"""Transcribe speech from an audio file. When save_transcript_to_file=True: {get_output_mode_description(output_mode)}. When return_transcript_to_client_directly=True, always returns text directly regardless of output mode.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -394,6 +397,7 @@ def speech_to_text(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description=f"""Convert text description of a sound effect to sound effect with a given duration. {get_output_mode_description(output_mode)}.
     
     Duration must be between 0.5 and 5 seconds.
@@ -453,6 +457,7 @@ def text_to_sound_effects(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""
     Search for existing voices, a voice that has already been added to the user's ElevenLabs voice library.
     Searches in name, description, labels and category.
@@ -480,7 +485,10 @@ def search_voices(
     ]
 
 
-@mcp.tool(description="List all available models")
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="List all available models"
+)
 def list_models() -> list[McpModel]:
     response = client.models.list()
     return [
@@ -496,7 +504,10 @@ def list_models() -> list[McpModel]:
     ]
 
 
-@mcp.tool(description="Get details of a specific voice")
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="Get details of a specific voice"
+)
 def get_voice(voice_id: str) -> McpVoice:
     """Get details of a specific voice."""
     response = client.voices.get(voice_id=voice_id)
@@ -509,6 +520,7 @@ def get_voice(voice_id: str) -> McpVoice:
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Create an instant voice clone of a voice using provided audio files.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -532,6 +544,7 @@ def voice_clone(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description=f"""Isolate audio from a file. {get_output_mode_description(output_mode)}.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -555,6 +568,7 @@ def isolate_audio(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="Check the current subscription status. Could be used to measure the usage of the API."
 )
 def check_subscription() -> TextContent:
@@ -563,6 +577,7 @@ def check_subscription() -> TextContent:
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Create a conversational AI agent with custom configuration.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -641,6 +656,7 @@ def create_agent(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Add a knowledge base to ElevenLabs workspace. Allowed types are epub, pdf, docx, txt, html.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -719,7 +735,10 @@ def add_knowledge_base_to_agent(
     )
 
 
-@mcp.tool(description="List all available conversational AI agents")
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="List all available conversational AI agents"
+)
 def list_agents() -> TextContent:
     """List all available conversational AI agents.
 
@@ -738,7 +757,10 @@ def list_agents() -> TextContent:
     return TextContent(type="text", text=f"Available agents: {agent_list}")
 
 
-@mcp.tool(description="Get details about a specific conversational AI agent")
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="Get details about a specific conversational AI agent"
+)
 def get_agent(agent_id: str) -> TextContent:
     """Get details about a specific conversational AI agent.
 
@@ -761,6 +783,7 @@ def get_agent(agent_id: str) -> TextContent:
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""Gets conversation with transcript. Returns: conversation details and full transcript. Use when: analyzing completed agent conversations.
 
     Args:
@@ -815,6 +838,7 @@ Transcript:
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""Lists agent conversations. Returns: conversation list with metadata. Use when: asked about conversation history.
 
     Args:
@@ -889,6 +913,7 @@ Call Successful: {conv.call_successful}"""
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description=f"""Transform audio from one voice to another using provided audio files. {get_output_mode_description(output_mode)}.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -930,8 +955,9 @@ def speech_to_speech(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description=f"""Create voice previews from a text prompt. Creates three previews with slight variations. {get_output_mode_description(output_mode)}.
-    
+
     If no text is provided, the tool will auto-generate text.
 
     Voice preview files are saved as: voice_design_(generated_voice_id)_(timestamp).mp3
@@ -979,6 +1005,7 @@ def text_to_voice(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Add a generated voice to the voice library. Uses the voice ID from the `text_to_voice` tool.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -1011,6 +1038,7 @@ def _get_phone_number_by_id(phone_number_id: str):
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
     description="""Make an outbound call using an ElevenLabs agent. Automatically detects provider type (Twilio or SIP trunk) and uses the appropriate API.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
@@ -1055,6 +1083,7 @@ def make_outbound_call(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""Search for a voice across the entire ElevenLabs voice library.
 
     Args:
@@ -1125,7 +1154,10 @@ def search_voice_library(
     return TextContent(type="text", text=f"Shared Voices:\n\n{formatted_info}")
 
 
-@mcp.tool(description="List all phone numbers associated with the ElevenLabs account")
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="List all phone numbers associated with the ElevenLabs account"
+)
 def list_phone_numbers() -> TextContent:
     """List all phone numbers associated with the ElevenLabs account.
 
@@ -1155,7 +1187,10 @@ def list_phone_numbers() -> TextContent:
     return TextContent(type="text", text=f"Phone Numbers:\n\n{formatted_info}")
 
 
-@mcp.tool(description="Play an audio file. Supports WAV and MP3 formats.")
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True),
+    description="Play an audio file. Supports WAV and MP3 formats."
+)
 def play_audio(input_file_path: str) -> TextContent:
     file_path = handle_input_file(input_file_path)
     play(open(file_path, "rb").read(), use_ffmpeg=False)
@@ -1163,6 +1198,7 @@ def play_audio(input_file_path: str) -> TextContent:
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""Convert a prompt to music and save the output audio file to a given directory.
     Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
 
@@ -1207,6 +1243,7 @@ def compose_music(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""Create a composition plan for music generation. Usage of this endpoint does not cost any credits but is subject to rate limiting depending on your tier. Composition plans can be used when generating music with the compose_music tool.
 
     Args:
