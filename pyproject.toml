@@ -31,7 +31,7 @@ dependencies = [
     "fastapi==0.109.2",
     "uvicorn==0.27.1",
     "python-dotenv==1.0.1",
-    "pydantic>=2.6.1",
+    "pydantic>=2.12",
     "httpx==0.28.1",
     "elevenlabs>=2.13.0",
     "fuzzywuzzy==0.18.0",
