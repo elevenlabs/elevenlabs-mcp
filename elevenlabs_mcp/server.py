@@ -13,6 +13,7 @@ Tools without cost warnings in their description are free to use as they only re
 
 import httpx
 import os
+import sys
 import base64
 from datetime import datetime
 from io import BytesIO
@@ -1266,10 +1267,31 @@ def create_composition_plan(
     return composition_plan
 
 
+def _is_broken_pipe_error(exc: BaseException) -> bool:
+    """Check if an exception is a BrokenPipeError or contains only BrokenPipeErrors."""
+    if isinstance(exc, BrokenPipeError):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return all(_is_broken_pipe_error(e) for e in exc.exceptions)
+    return False
+
+
 def main():
-    print("Starting MCP server")
     """Run the MCP server"""
-    mcp.run()
+    print("Starting MCP server")
+    try:
+        mcp.run()
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass    # Ignore broken pipe and keyboard interrupt errors
+    except (Exception, BaseExceptionGroup) as err:
+        if not _is_broken_pipe_error(err):
+            raise
+    finally:
+        try:
+            sys.stdout.close()
+            sys.stderr.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
