@@ -13,6 +13,8 @@ Tools without cost warnings in their description are free to use as they only re
 
 import httpx
 import os
+import shutil
+import subprocess
 import sys
 import base64
 from datetime import datetime
@@ -229,7 +231,7 @@ def get_elevenlabs_resource(filename: str) -> Resource:
         similarity_boost (float, optional): Similarity boost of the generated audio. Determines how closely the AI should adhere to the original voice when attempting to replicate it. Range is 0 to 1.
         style (float, optional): Style of the generated audio. Determines the style exaggeration of the voice. This setting attempts to amplify the style of the original speaker. It does consume additional computational resources and might increase latency if set to anything other than 0. Range is 0 to 1.
         use_speaker_boost (bool, optional): Use speaker boost of the generated audio. This setting boosts the similarity to the original speaker. Using this setting requires a slightly higher computational load, which in turn increases latency.
-        speed (float, optional): Speed of the generated audio. Controls the speed of the generated speech. A value of 1.0 is the default speed. Values less than 1.0 slow down the speech, values greater than 1.0 speed it up.
+        speed (float, optional): Speed of the generated audio. Controls the speed of the generated speech. A value of 1.0 is the default speed. Values less than 1.0 slow down the speech, values greater than 1.0 speed it up. Note: the eleven_v3 model currently ignores this parameter silently. For v3, use post-processing (e.g. ffmpeg atempo) to adjust speed.
         output_directory (str, optional): Directory where files should be saved (only used when saving files).
             Defaults to $HOME/Desktop if not provided.
         language: ISO 639-1 language code for the voice.
@@ -315,6 +317,38 @@ def text_to_speech(
         },
     )
     audio_bytes = b"".join(audio_data)
+
+    # Some models (e.g. eleven_v3) silently ignore the speed parameter in
+    # voice_settings.  When the requested speed differs from 1.0 and ffmpeg is
+    # available, apply atempo post-processing as a reliable fallback.
+    if speed != 1.0 and shutil.which("ffmpeg"):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as src:
+            src.write(audio_bytes)
+            src_path = src.name
+        dst_path = src_path + ".out.mp3"
+        # ffmpeg atempo filter accepts 0.5–100.0; chain filters for extremes
+        atempo_filters = []
+        remaining = speed
+        while remaining > 2.0:
+            atempo_filters.append("atempo=2.0")
+            remaining /= 2.0
+        while remaining < 0.5:
+            atempo_filters.append("atempo=0.5")
+            remaining *= 2.0
+        atempo_filters.append(f"atempo={remaining}")
+        filter_str = ",".join(atempo_filters)
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", src_path, "-filter:a", filter_str, dst_path],
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            with open(dst_path, "rb") as f:
+                audio_bytes = f.read()
+        os.unlink(src_path)
+        if os.path.exists(dst_path):
+            os.unlink(dst_path)
 
     # Handle different output modes
     success_message = f"Success. File saved as: {{file_path}}. Voice used: {voice.name if voice else DEFAULT_VOICE_ID}"
