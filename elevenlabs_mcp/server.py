@@ -229,7 +229,7 @@ def get_elevenlabs_resource(filename: str) -> Resource:
         similarity_boost (float, optional): Similarity boost of the generated audio. Determines how closely the AI should adhere to the original voice when attempting to replicate it. Range is 0 to 1.
         style (float, optional): Style of the generated audio. Determines the style exaggeration of the voice. This setting attempts to amplify the style of the original speaker. It does consume additional computational resources and might increase latency if set to anything other than 0. Range is 0 to 1.
         use_speaker_boost (bool, optional): Use speaker boost of the generated audio. This setting boosts the similarity to the original speaker. Using this setting requires a slightly higher computational load, which in turn increases latency.
-        speed (float, optional): Speed of the generated audio. Controls the speed of the generated speech. Values range from 0.7 to 1.2, with 1.0 being the default speed. Lower values create slower, more deliberate speech while higher values produce faster-paced speech. Extreme values can impact the quality of the generated speech. Range is 0.7 to 1.2.
+        speed (float, optional): Speed of the generated audio. Controls the speed of the generated speech. A value of 1.0 is the default speed. Values less than 1.0 slow down the speech, values greater than 1.0 speed it up.
         output_directory (str, optional): Directory where files should be saved (only used when saving files).
             Defaults to $HOME/Desktop if not provided.
         language: ISO 639-1 language code for the voice.
