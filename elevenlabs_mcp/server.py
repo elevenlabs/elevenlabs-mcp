@@ -161,18 +161,20 @@ def get_elevenlabs_resource(filename: str) -> Resource:
     candidate = Path(filename)
     base_dir = make_output_path(None, base_path)
 
+    base_dir_resolved = base_dir.resolve()
+
     if candidate.is_absolute():
-        file_path = candidate.resolve()
+        resolved_file = candidate.resolve()
     else:
-        base_dir_resolved = base_dir.resolve()
         resolved_file = (base_dir_resolved / candidate).resolve()
-        try:
-            resolved_file.relative_to(base_dir_resolved)
-        except ValueError:
-            make_error(
-                f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
-            )
-        file_path = resolved_file
+
+    try:
+        resolved_file.relative_to(base_dir_resolved)
+    except ValueError:
+        make_error(
+            f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
+        )
+    file_path = resolved_file
 
     if not file_path.exists():
         raise FileNotFoundError(f"Resource file not found: {filename}")

@@ -11,6 +11,7 @@ from elevenlabs_mcp.utils import (
     find_similar_filenames,
     try_find_similar_files,
     handle_input_file,
+    parse_location,
 )
 
 
@@ -145,3 +146,61 @@ def test_handle_input_file():
 
         with pytest.raises(ElevenLabsMcpError):
             handle_input_file(str(temp_path / "nonexistent.mp3"))
+
+
+def _resolve_resource_path(filename: str, base_dir: Path) -> Path:
+    """
+    Replicate the resource path resolution logic from server.py
+    to validate that absolute paths are checked against base_dir.
+    """
+    candidate = Path(filename)
+    base_dir_resolved = base_dir.resolve()
+
+    if candidate.is_absolute():
+        resolved_file = candidate.resolve()
+    else:
+        resolved_file = (base_dir_resolved / candidate).resolve()
+
+    try:
+        resolved_file.relative_to(base_dir_resolved)
+    except ValueError:
+        make_error(
+            f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
+        )
+    return resolved_file
+
+
+def test_resource_path_absolute_inside_base_dir():
+    """Absolute path inside base_dir should succeed."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base = Path(temp_dir)
+        test_file = base / "output.mp3"
+        test_file.touch()
+        result = _resolve_resource_path(str(test_file), base)
+        assert result == test_file.resolve()
+
+
+def test_resource_path_absolute_outside_base_dir():
+    """Absolute path outside base_dir must be rejected (path traversal fix)."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base = Path(temp_dir)
+        with pytest.raises(ElevenLabsMcpError):
+            _resolve_resource_path("/etc/passwd", base)
+
+
+def test_resource_path_relative_traversal():
+    """Relative path with .. traversal must be rejected."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base = Path(temp_dir)
+        with pytest.raises(ElevenLabsMcpError):
+            _resolve_resource_path("../../etc/passwd", base)
+
+
+def test_resource_path_relative_normal():
+    """Normal relative path inside base_dir should succeed."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        base = Path(temp_dir)
+        test_file = base / "audio.mp3"
+        test_file.touch()
+        result = _resolve_resource_path("audio.mp3", base)
+        assert result == test_file.resolve()
