@@ -246,6 +246,42 @@ def parse_location(api_residency: str | None) -> str:
         raise ValueError(f"ELEVENLABS_API_RESIDENCY must be one of {valid_options}")
 
     return origin_map[api_residency]
+
+
+def resolve_resource_path(filename: str, base_dir: Path) -> Path:
+    """
+    Resolve a resource filename to an absolute path, ensuring it falls within base_dir.
+
+    Both absolute and relative paths are validated against base_dir to prevent
+    path traversal attacks.
+
+    Args:
+        filename: The filename or path to resolve (absolute or relative).
+        base_dir: The base directory that the resolved path must fall within.
+
+    Returns:
+        Path: The resolved absolute path.
+
+    Raises:
+        ElevenLabsMcpError: If the resolved path is outside base_dir.
+    """
+    candidate = Path(filename)
+    base_dir_resolved = base_dir.resolve()
+
+    if candidate.is_absolute():
+        resolved_file = candidate.resolve()
+    else:
+        resolved_file = (base_dir_resolved / candidate).resolve()
+
+    try:
+        resolved_file.relative_to(base_dir_resolved)
+    except ValueError:
+        make_error(
+            f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
+        )
+    return resolved_file
+
+
 def get_mime_type(file_extension: str) -> str:
     """
     Get MIME type for a given file extension.
