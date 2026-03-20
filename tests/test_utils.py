@@ -11,6 +11,7 @@ from elevenlabs_mcp.utils import (
     find_similar_filenames,
     try_find_similar_files,
     handle_input_file,
+    parse_location,
 )
 
 
@@ -145,3 +146,39 @@ def test_handle_input_file():
 
         with pytest.raises(ElevenLabsMcpError):
             handle_input_file(str(temp_path / "nonexistent.mp3"))
+
+
+def test_parse_location_shorthands():
+    """Test that 'eu' and 'in' shorthands resolve to the same URLs as their full forms."""
+    assert parse_location("eu") == "https://api.eu.residency.elevenlabs.io"
+    assert parse_location("in") == "https://api.in.residency.elevenlabs.io"
+    assert parse_location("eu") == parse_location("eu-residency")
+    assert parse_location("in") == parse_location("in-residency")
+
+
+def test_parse_location_existing_values():
+    """Existing residency values still work."""
+    assert parse_location("us") == "https://api.elevenlabs.io"
+    assert parse_location("global") == "https://api.elevenlabs.io"
+    assert parse_location("eu-residency") == "https://api.eu.residency.elevenlabs.io"
+    assert parse_location("in-residency") == "https://api.in.residency.elevenlabs.io"
+
+
+def test_parse_location_none_and_empty():
+    """None and empty strings default to US."""
+    assert parse_location(None) == "https://api.elevenlabs.io"
+    assert parse_location("") == "https://api.elevenlabs.io"
+    assert parse_location("   ") == "https://api.elevenlabs.io"
+
+
+def test_parse_location_case_insensitive():
+    """Shorthands are case-insensitive."""
+    assert parse_location("EU") == "https://api.eu.residency.elevenlabs.io"
+    assert parse_location("IN") == "https://api.in.residency.elevenlabs.io"
+    assert parse_location("  Eu  ") == "https://api.eu.residency.elevenlabs.io"
+
+
+def test_parse_location_invalid():
+    """Invalid values raise ValueError."""
+    with pytest.raises(ValueError):
+        parse_location("invalid")

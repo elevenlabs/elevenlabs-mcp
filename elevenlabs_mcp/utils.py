@@ -231,7 +231,9 @@ def parse_location(api_residency: str | None) -> str:
     """
     origin_map = {
         "us": "https://api.elevenlabs.io",
+        "eu": "https://api.eu.residency.elevenlabs.io",
         "eu-residency": "https://api.eu.residency.elevenlabs.io",
+        "in": "https://api.in.residency.elevenlabs.io",
         "in-residency": "https://api.in.residency.elevenlabs.io",
         "global": "https://api.elevenlabs.io",
     }
