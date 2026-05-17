@@ -12,6 +12,7 @@ from elevenlabs_mcp.utils import (
     try_find_similar_files,
     handle_input_file,
     parse_location,
+    resolve_resource_path,
 )
 
 
@@ -99,6 +100,32 @@ def test_make_output_path_relative_with_base():
         assert result == Path(temp_dir) / relative_subdir
         assert result.exists()
         assert result.is_dir()
+
+
+def test_resolve_resource_path_absolute_inside_base_dir(tmp_path):
+    target = tmp_path / "sub" / "file.mp3"
+    target.parent.mkdir()
+    target.write_bytes(b"x")
+    result = resolve_resource_path(str(target), tmp_path)
+    assert result == target.resolve()
+
+
+def test_resolve_resource_path_absolute_outside_base_dir(tmp_path):
+    outside = tmp_path.parent / "escape.txt"
+    with pytest.raises(ElevenLabsMcpError):
+        resolve_resource_path(str(outside), tmp_path)
+
+
+def test_resolve_resource_path_relative_traversal(tmp_path):
+    with pytest.raises(ElevenLabsMcpError):
+        resolve_resource_path("../escape.txt", tmp_path)
+
+
+def test_resolve_resource_path_relative_normal(tmp_path):
+    target = tmp_path / "ok.mp3"
+    target.write_bytes(b"x")
+    result = resolve_resource_path("ok.mp3", tmp_path)
+    assert result == target.resolve()
 
 
 def test_find_similar_filenames():

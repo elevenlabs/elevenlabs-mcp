@@ -57,6 +57,23 @@ def make_output_path(
     return output_path
 
 
+def resolve_resource_path(filename: str, base_dir: Path) -> Path:
+    """Resolve a resource filename against base_dir, rejecting paths outside it."""
+    candidate = Path(filename)
+    base_dir_resolved = base_dir.resolve()
+    if candidate.is_absolute():
+        resolved_file = candidate.resolve()
+    else:
+        resolved_file = (base_dir_resolved / candidate).resolve()
+    try:
+        resolved_file.relative_to(base_dir_resolved)
+    except ValueError:
+        make_error(
+            f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
+        )
+    return resolved_file
+
+
 def find_similar_filenames(
     target_file: str, directory: Path, threshold: int = 70
 ) -> list[tuple[str, int]]:

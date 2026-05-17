@@ -41,6 +41,7 @@ from elevenlabs_mcp.utils import (
     handle_output_mode,
     handle_multiple_files_output_mode,
     get_output_mode_description,
+    resolve_resource_path,
 )
 
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
@@ -48,7 +49,6 @@ from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 
 from elevenlabs.play import play
 from elevenlabs_mcp import __version__
-from pathlib import Path
 
 load_dotenv()
 api_key = os.getenv("ELEVENLABS_API_KEY")
@@ -158,21 +158,8 @@ def get_elevenlabs_resource(filename: str) -> Resource:
     """
     Resource handler for ElevenLabs generated files.
     """
-    candidate = Path(filename)
     base_dir = make_output_path(None, base_path)
-
-    if candidate.is_absolute():
-        file_path = candidate.resolve()
-    else:
-        base_dir_resolved = base_dir.resolve()
-        resolved_file = (base_dir_resolved / candidate).resolve()
-        try:
-            resolved_file.relative_to(base_dir_resolved)
-        except ValueError:
-            make_error(
-                f"Resource path ({resolved_file}) is outside of allowed directory {base_dir_resolved}"
-            )
-        file_path = resolved_file
+    file_path = resolve_resource_path(filename, base_dir)
 
     if not file_path.exists():
         raise FileNotFoundError(f"Resource file not found: {filename}")
