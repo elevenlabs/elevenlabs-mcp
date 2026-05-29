@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 import tempfile
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from elevenlabs_mcp.utils import (
     ElevenLabsMcpError,
     make_error,
@@ -15,6 +15,7 @@ from elevenlabs_mcp.utils import (
     parse_location,
     resolve_resource_path,
 )
+from elevenlabs_mcp.server import simulate_conversation
 
 
 def test_make_error():
@@ -228,6 +229,65 @@ def test_handle_input_file():
 
         with pytest.raises(ElevenLabsMcpError):
             handle_input_file(str(temp_path / "nonexistent.mp3"))
+
+def test_simulate_conversation_bad_criteria_returns_error():
+    """Missing fields in evaluation criteria should return an error without calling API."""
+    with patch("elevenlabs_mcp.server.client") as mock_client:
+        result = simulate_conversation(
+            agent_id="agent_abc",
+            simulated_user_prompt="Be difficult.",
+            extra_evaluation_criteria=[{"id": "check"}],  # missing name + goal
+        )
+        assert "missing" in result.text.lower()
+        mock_client.conversational_ai.agents.simulate_conversation.assert_not_called()
+
+
+def test_simulate_conversation_formats_transcript():
+    """Conversation turns should appear correctly in output."""
+    with patch("elevenlabs_mcp.server.client") as mock_client:
+        user_turn = MagicMock()
+        user_turn.role = "user"
+        user_turn.message = "I need help with billing."
+        user_turn.tool_calls = []
+
+        agent_turn = MagicMock()
+        agent_turn.role = "agent"
+        agent_turn.message = "I can help you with that."
+        agent_turn.tool_calls = []
+
+        analysis = MagicMock()
+        analysis.transcript_summary = "Billing issue resolved."
+        analysis.call_successful = "success"
+        analysis.evaluation_criteria_results = {}
+
+        mock_response = MagicMock()
+        mock_response.simulated_conversation = [user_turn, agent_turn]
+        mock_response.analysis = analysis
+        mock_client.conversational_ai.agents.simulate_conversation.return_value = mock_response
+
+        result = simulate_conversation(
+            agent_id="agent_abc",
+            simulated_user_prompt="You are a customer with a billing question.",
+        )
+        assert "I need help with billing." in result.text
+        assert "I can help you with that." in result.text
+        assert "Billing issue resolved." in result.text
+        assert "✅" in result.text
+
+
+def test_simulate_conversation_handles_empty_response():
+    """Empty conversation history should not crash."""
+    with patch("elevenlabs_mcp.server.client") as mock_client:
+        mock_response = MagicMock()
+        mock_response.simulated_conversation = []
+        mock_response.analysis = None
+        mock_client.conversational_ai.agents.simulate_conversation.return_value = mock_response
+
+        result = simulate_conversation(
+            agent_id="agent_abc",
+            simulated_user_prompt="Do nothing.",
+        )
+        assert result.text is not None
 
 
 def test_parse_location_shorthands():

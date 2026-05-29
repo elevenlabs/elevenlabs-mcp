@@ -50,6 +50,8 @@ from elevenlabs.types.knowledge_base_locator import KnowledgeBaseLocator
 from elevenlabs.play import play
 from elevenlabs_mcp import __version__
 
+from elevenlabs import PromptEvaluationCriteria
+
 load_dotenv()
 api_key = os.getenv("ELEVENLABS_API_KEY")
 base_path = os.getenv("ELEVENLABS_MCP_BASE_PATH")
@@ -829,7 +831,102 @@ Transcript:
         make_error(f"Failed to fetch conversation: {str(e)}")
         # satisfies type checker
         return TextContent(type="text", text="")
+    
 
+@mcp.tool(
+    description="""Simulate a text conversation between a conversational AI agent and a
+    simulated user. Runs the full conversation and returns the transcript plus analysis.
+
+    Use this to test agent behaviour, evaluate prompts, and catch failure modes without
+    a live call. The simulated user follows the persona you describe.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs.
+    Only use when explicitly requested by the user.
+
+    Args:
+        agent_id: ID of the agent to test. Use list_agents to find IDs.
+        simulated_user_prompt: Instructions for how the simulated user should behave.
+            Example: "You are a frustrated customer who cannot find the cancel button."
+        first_message: Optional opening message to kick off the conversation.
+        extra_evaluation_criteria: Optional list of dicts, each with:
+            - id (str): unique key e.g. "issue_resolved"
+            - name (str): human label e.g. "Issue Resolved"
+            - conversation_goal_prompt (str): the assertion to check
+              e.g. "The agent fully resolved the user's issue."
+        max_turns: Maximum conversation turns. Defaults to 10.
+    """
+)
+def simulate_conversation(
+    agent_id: str,
+    simulated_user_prompt: str,
+    first_message: str | None = None,
+    extra_evaluation_criteria: list[dict] | None = None,
+    max_turns: int = 10,
+) -> TextContent:
+    # Validate criteria fields early
+    criteria_objects = []
+    if extra_evaluation_criteria:
+        for c in extra_evaluation_criteria:
+            missing = [k for k in ("id", "name", "conversation_goal_prompt") if k not in c]
+            if missing:
+                return make_error(
+                    f"Evaluation criterion missing fields {missing}. "
+                    "Each criterion needs 'id', 'name', and 'conversation_goal_prompt'."
+                )
+            criteria_objects.append(
+                PromptEvaluationCriteria(
+                    id=c["id"],
+                    name=c["name"],
+                    conversation_goal_prompt=c["conversation_goal_prompt"],
+                    use_knowledge_base=False,
+                )
+            )
+
+    response = client.conversational_ai.agents.simulate_conversation(
+        agent_id=agent_id,
+        simulation_specification={
+            "simulated_user_config": {
+                "prompt": simulated_user_prompt,
+                **({"first_message": first_message} if first_message else {}),
+            }
+        },
+        extra_evaluation_criteria=criteria_objects if criteria_objects else None,
+        new_turns_limit=max_turns,
+    )
+
+    lines = ["## Simulated Conversation\n"]
+
+    # Transcript
+    history = getattr(response, "simulated_conversation", []) or []
+    for turn in history:
+        role = getattr(turn, "role", "unknown").capitalize()
+        message = getattr(turn, "message", None)
+        if message:
+            lines.append(f"**{role}:** {message}")
+        for tc in getattr(turn, "tool_calls", []) or []:
+            lines.append(f"  _(tool: {getattr(tc, 'tool_name', '?')})_")
+
+    # Analysis
+    analysis = getattr(response, "analysis", None)
+    if analysis:
+        lines.append("\n## Analysis\n")
+        summary = getattr(analysis, "transcript_summary", None)
+        if summary:
+            lines.append(f"**Summary:** {summary}\n")
+        call_successful = getattr(analysis, "call_successful", None)
+        if call_successful:
+            icon = "✅" if call_successful == "success" else "❌"
+            lines.append(f"**Call result:** {icon} {call_successful}\n")
+        eval_results = getattr(analysis, "evaluation_criteria_results", {}) or {}
+        if eval_results:
+            lines.append("**Criteria results:**")
+            for key, result in eval_results.items():
+                r = getattr(result, "result", "unknown")
+                rationale = getattr(result, "rationale", "")
+                icon = "✅" if r == "success" else "❌"
+                lines.append(f"  {icon} **{key}**: {r} — {rationale}")
+
+    return TextContent(type="text", text="\n".join(lines))
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
