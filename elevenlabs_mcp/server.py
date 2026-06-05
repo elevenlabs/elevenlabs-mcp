@@ -1004,7 +1004,7 @@ def create_voice_from_preview(
     voice_name: str,
     voice_description: str,
 ) -> TextContent:
-    voice = client.text_to_voice.create_voice_from_preview(
+    voice = client.text_to_voice.create(
         voice_name=voice_name,
         voice_description=voice_description,
         generated_voice_id=generated_voice_id,
