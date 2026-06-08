@@ -28,7 +28,7 @@ from mcp.types import (
 )
 from elevenlabs.client import ElevenLabs
 from elevenlabs.types import MusicPrompt
-from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
+from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage, SixtyDbVoice
 from elevenlabs_mcp.utils import (
     make_error,
     make_output_path,
@@ -71,6 +71,21 @@ custom_client = httpx.Client(
 )
 
 client = ElevenLabs(api_key=api_key, httpx_client=custom_client, base_url=origin)
+
+# 60db configuration (optional — server works without it, 60db tools just won't be registered)
+sixty_db_api_key = os.getenv("SIXTY_DB_API_KEY")
+sixty_db_client = None
+if sixty_db_api_key:
+    sixty_db_client = httpx.Client(
+        base_url="https://api.60db.ai",
+        headers={
+            "Authorization": f"Bearer {sixty_db_api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": f"ElevenLabs-MCP/{__version__}",
+        },
+        timeout=120.0,
+    )
+
 mcp = FastMCP("ElevenLabs")
 
 
@@ -1252,6 +1267,134 @@ def create_composition_plan(
     )
 
     return composition_plan
+
+
+# ─── 60db Tools (conditionally registered) ───────────────────────────────────
+
+
+def sixty_db_text_to_speech(
+    text: str,
+    voice_id: str | None = None,
+    output_directory: str | None = None,
+    enhance: bool = True,
+    speed: float = 1.0,
+    stability: int = 50,
+    similarity: int = 75,
+    output_format: str = "mp3",
+) -> Union[TextContent, EmbeddedResource]:
+    if text == "":
+        make_error("Text is required.")
+    if len(text) > 5000:
+        make_error("Text must be 5000 characters or fewer.")
+
+    payload: dict = {
+        "text": text,
+        "enhance": enhance,
+        "speed": speed,
+        "stability": stability,
+        "similarity": similarity,
+        "output_format": output_format,
+    }
+    if voice_id is not None:
+        payload["voice_id"] = voice_id
+
+    response = sixty_db_client.post("/tts-synthesize", json=payload)
+    response.raise_for_status()
+    data = response.json()
+
+    if not data.get("success"):
+        make_error(f"60db TTS failed: {data.get('message', 'Unknown error')}")
+
+    audio_bytes = base64.b64decode(data["audio_base64"])
+
+    output_path = make_output_path(output_directory, base_path)
+    output_file_name = make_output_file("60db_tts", text, output_format)
+
+    success_message = (
+        f"Success. File saved as: {{file_path}}. "
+        f"Duration: {data.get('duration_seconds', 'N/A')}s, "
+        f"Sample rate: {data.get('sample_rate', 'N/A')}Hz"
+    )
+    return handle_output_mode(
+        audio_bytes, output_path, output_file_name, output_mode, success_message
+    )
+
+
+def sixty_db_search_voices(
+    search: str | None = None,
+) -> list[SixtyDbVoice]:
+    response = sixty_db_client.get("/myvoices")
+    response.raise_for_status()
+    data = response.json()
+
+    if not data.get("success"):
+        make_error(f"60db voices fetch failed: {data.get('message', 'Unknown error')}")
+
+    voices = []
+    for v in data.get("data", []):
+        labels = v.get("labels", {})
+        voice = SixtyDbVoice(
+            id=v["voice_id"],
+            name=v["name"],
+            category=v.get("category", ""),
+            model=v.get("model"),
+            language=labels.get("language_name"),
+            gender=labels.get("gender"),
+            accent=labels.get("accent"),
+            description=v.get("description"),
+        )
+        if search:
+            search_lower = search.lower()
+            searchable = (
+                f"{voice.name} {voice.category} {voice.language or ''} "
+                f"{voice.gender or ''} {voice.accent or ''} "
+                f"{voice.description or ''}"
+            ).lower()
+            if search_lower not in searchable:
+                continue
+        voices.append(voice)
+
+    return voices
+
+
+# Register 60db tools only when API key is configured
+if sixty_db_api_key:
+    mcp.tool(
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+        description=f"""Convert text to speech using 60db AI. {get_output_mode_description(output_mode)}.
+
+    60db supports: English, Hindi, Bengali, Gujarati, Kannada, Malayalam, Marathi, Punjabi, Tamil, Telugu.
+    Language is auto-detected from the input text.
+
+    ⚠️ COST WARNING: This tool makes an API call to 60db which may incur costs ($0.00002/character, $0.01 minimum per request). Only use when explicitly requested by the user.
+
+    Args:
+        text (str): The text to convert to speech (max 5000 characters).
+        voice_id (str, optional): The 60db voice ID to use. Use sixty_db_search_voices to find available voices.
+        output_directory (str, optional): Directory where files should be saved. Defaults to $HOME/Desktop if not provided.
+        enhance (bool, optional): Enable audio enhancement for better quality. Defaults to True.
+        speed (float, optional): Speech speed multiplier. Range is 0.5 to 2.0. Defaults to 1.0.
+        stability (int, optional): Voice stability 0-100. Lower = more expressive, higher = more consistent. Defaults to 50.
+        similarity (int, optional): Voice similarity 0-100. How closely output matches the source voice. Defaults to 75.
+        output_format (str, optional): Audio output format. Must be one of: mp3, wav, ogg, flac. Defaults to mp3.
+
+    Returns:
+        Text content with file path or MCP resource with audio data, depending on output mode.
+    """,
+    )(sixty_db_text_to_speech)
+
+    mcp.tool(
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+        description="""List voices available in the user's 60db account.
+    Optionally filter by a search term that matches against name, category, language, gender, accent, or description.
+
+    Args:
+        search (str, optional): Search term to filter voices by.
+
+    Returns:
+        List of 60db voices with their details.
+    """,
+    )(sixty_db_search_voices)
 
 
 def _is_broken_pipe_error(exc: BaseException) -> bool:

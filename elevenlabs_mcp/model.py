@@ -32,3 +32,14 @@ class McpModel(BaseModel):
     id: str
     name: str
     languages: list[McpLanguage]
+
+
+class SixtyDbVoice(BaseModel):
+    id: str
+    name: str
+    category: str
+    model: Optional[str] = None
+    language: Optional[str] = None
+    gender: Optional[str] = None
+    accent: Optional[str] = None
+    description: Optional[str] = None
