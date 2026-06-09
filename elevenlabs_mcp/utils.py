@@ -252,6 +252,8 @@ def parse_location(api_residency: str | None) -> str:
         "eu-residency": "https://api.eu.residency.elevenlabs.io",
         "in": "https://api.in.residency.elevenlabs.io",
         "in-residency": "https://api.in.residency.elevenlabs.io",
+        "sg": "https://api.sg.residency.elevenlabs.io",
+        "sg-residency": "https://api.sg.residency.elevenlabs.io",
         "global": "https://api.elevenlabs.io",
     }
 
