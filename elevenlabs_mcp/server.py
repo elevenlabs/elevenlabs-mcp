@@ -11,6 +11,7 @@ Each tool that makes an API call is marked with a cost warning. Please follow th
 Tools without cost warnings in their description are free to use as they only read existing data.
 """
 
+import contextlib
 import httpx
 import os
 import sys
@@ -517,10 +518,13 @@ def get_voice(voice_id: str) -> McpVoice:
 def voice_clone(
     name: str, files: list[str], description: str | None = None
 ) -> TextContent:
-    input_files = [str(handle_input_file(file).absolute()) for file in files]
-    voice = client.voices.ivc.create(
-        name=name, description=description, files=input_files
-    )
+    with contextlib.ExitStack() as stack:
+        input_files = [
+            stack.enter_context(handle_input_file(file).open("rb")) for file in files
+        ]
+        voice = client.voices.ivc.create(
+            name=name, description=description, files=input_files
+        )
 
     return TextContent(
         type="text",
