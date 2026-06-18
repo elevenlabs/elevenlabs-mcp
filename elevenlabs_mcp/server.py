@@ -17,7 +17,7 @@ import sys
 import base64
 from datetime import datetime
 from io import BytesIO
-from typing import Literal, Union
+from typing import IO, Literal, Union, cast
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.types import (
@@ -27,7 +27,7 @@ from mcp.types import (
     ToolAnnotations,
 )
 from elevenlabs.client import ElevenLabs
-from elevenlabs.types import MusicPrompt
+from elevenlabs.types import CompositionPlan, MusicPrompt
 from elevenlabs_mcp.model import McpVoice, McpModel, McpLanguage
 from elevenlabs_mcp.utils import (
     make_error,
@@ -57,7 +57,9 @@ output_mode = os.getenv("ELEVENLABS_MCP_OUTPUT_MODE", "files").strip().lower()
 DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
 
 if output_mode not in {"files", "resources", "both"}:
-    raise ValueError("ELEVENLABS_MCP_OUTPUT_MODE must be one of: 'files', 'resources', 'both'")
+    raise ValueError(
+        "ELEVENLABS_MCP_OUTPUT_MODE must be one of: 'files', 'resources', 'both'"
+    )
 if not api_key:
     raise ValueError("ELEVENLABS_API_KEY environment variable is required")
 
@@ -153,6 +155,8 @@ def format_diarized_transcript(transcription) -> str:
     except Exception:
         # Fallback to regular text if something goes wrong
         return transcription.text
+
+
 @mcp.resource("elevenlabs://{filename}")
 def get_elevenlabs_resource(filename: str) -> Resource:
     """
@@ -243,7 +247,7 @@ def get_elevenlabs_resource(filename: str) -> Resource:
 
     Returns:
         Text content with file path or MCP resource with audio data, depending on output mode.
-    """
+    """,
 )
 def text_to_speech(
     text: str,
@@ -327,7 +331,7 @@ def text_to_speech(
 
     Returns:
         TextContent containing the transcription or MCP resource with transcript data.
-    """
+    """,
 )
 def speech_to_text(
     input_file_path: str,
@@ -418,7 +422,7 @@ def speech_to_text(
             opus_48000_96
             opus_48000_128
             opus_48000_192
-    """
+    """,
 )
 def text_to_sound_effects(
     text: str,
@@ -457,7 +461,7 @@ def text_to_sound_effects(
 
     Returns:
         List of voices that match the search criteria.
-    """
+    """,
 )
 def search_voices(
     search: str | None = None,
@@ -475,7 +479,7 @@ def search_voices(
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="List all available models"
+    description="List all available models",
 )
 def list_models() -> list[McpModel]:
     response = client.models.list()
@@ -494,7 +498,7 @@ def list_models() -> list[McpModel]:
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="Get details of a specific voice"
+    description="Get details of a specific voice",
 )
 def get_voice(voice_id: str) -> McpVoice:
     """Get details of a specific voice."""
@@ -512,7 +516,7 @@ def get_voice(voice_id: str) -> McpVoice:
     description="""Create an instant voice clone of a voice using provided audio files.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-    """
+    """,
 )
 def voice_clone(
     name: str, files: list[str], description: str | None = None
@@ -536,7 +540,7 @@ def voice_clone(
     description=f"""Isolate audio from a file. {get_output_mode_description(output_mode)}.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-    """
+    """,
 )
 def isolate_audio(
     input_file_path: str, output_directory: str | None = None
@@ -557,7 +561,7 @@ def isolate_audio(
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="Check the current subscription status. Could be used to measure the usage of the API."
+    description="Check the current subscription status. Could be used to measure the usage of the API.",
 )
 def check_subscription() -> TextContent:
     subscription = client.user.subscription.get()
@@ -588,7 +592,7 @@ def check_subscription() -> TextContent:
         max_duration_seconds: Maximum duration of a conversation in seconds. Defaults to 600 seconds (10 minutes).
         record_voice: Whether to record the agent's voice.
         retention_days: Number of days to retain the agent's data.
-    """
+    """,
 )
 def create_agent(
     name: str,
@@ -655,7 +659,7 @@ def create_agent(
         url: URL of the knowledge base.
         input_file_path: Path to the file to add to the knowledge base.
         text: Text to add to the knowledge base.
-    """
+    """,
 )
 def add_knowledge_base_to_agent(
     agent_id: str,
@@ -725,7 +729,7 @@ def add_knowledge_base_to_agent(
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="List all available conversational AI agents"
+    description="List all available conversational AI agents",
 )
 def list_agents() -> TextContent:
     """List all available conversational AI agents.
@@ -747,7 +751,7 @@ def list_agents() -> TextContent:
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="Get details about a specific conversational AI agent"
+    description="Get details about a specific conversational AI agent",
 )
 def get_agent(agent_id: str) -> TextContent:
     """Get details about a specific conversational AI agent.
@@ -776,7 +780,7 @@ def get_agent(agent_id: str) -> TextContent:
 
     Args:
         conversation_id: The unique identifier of the conversation to retrieve, you can get the ids from the list_conversations tool.
-    """
+    """,
 )
 def get_conversation(
     conversation_id: str,
@@ -836,7 +840,7 @@ Transcript:
         call_start_after_unix (int, optional): Filter conversations that started after this Unix timestamp
         page_size (int, optional): Number of conversations to return per page (1-100, defaults to 30)
         max_length (int, optional): Maximum character length of the response text (defaults to 10000)
-    """
+    """,
 )
 def list_conversations(
     agent_id: str | None = None,
@@ -905,7 +909,7 @@ Call Successful: {conv.call_successful}"""
     description=f"""Transform audio from one voice to another using provided audio files. {get_output_mode_description(output_mode)}.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-    """
+    """,
 )
 def speech_to_speech(
     input_file_path: str,
@@ -953,7 +957,7 @@ def speech_to_speech(
     Example file name: voice_design_Ya2J5uIa5Pq14DNPsbC1_20250403_164949.mp3
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-    """
+    """,
 )
 def text_to_voice(
     voice_description: str,
@@ -997,7 +1001,7 @@ def text_to_voice(
     description="""Add a generated voice to the voice library. Uses the voice ID from the `text_to_voice` tool.
 
     ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
-    """
+    """,
 )
 def create_voice_from_preview(
     generated_voice_id: str,
@@ -1038,7 +1042,7 @@ def _get_phone_number_by_id(phone_number_id: str):
 
     Returns:
         TextContent containing information about the call
-    """
+    """,
 )
 def make_outbound_call(
     agent_id: str,
@@ -1081,7 +1085,7 @@ def make_outbound_call(
 
     Returns:
         TextContent containing information about the shared voices
-    """
+    """,
 )
 def search_voice_library(
     page: int = 0,
@@ -1144,7 +1148,7 @@ def search_voice_library(
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="List all phone numbers associated with the ElevenLabs account"
+    description="List all phone numbers associated with the ElevenLabs account",
 )
 def list_phone_numbers() -> TextContent:
     """List all phone numbers associated with the ElevenLabs account.
@@ -1177,7 +1181,7 @@ def list_phone_numbers() -> TextContent:
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True),
-    description="Play an audio file. Supports WAV and MP3 formats."
+    description="Play an audio file. Supports WAV and MP3 formats.",
 )
 def play_audio(input_file_path: str) -> TextContent:
     file_path = handle_input_file(input_file_path)
@@ -1187,22 +1191,34 @@ def play_audio(input_file_path: str) -> TextContent:
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="""Convert a prompt to music and save the output audio file to a given directory.
-    Directory is optional, if not provided, the output file will be saved to $HOME/Desktop.
+    description=f"""Convert a prompt to music and save the output audio file to a given directory.
+    Directory is optional, if not provided, the output file will be saved to $HOME/Desktop. {get_output_mode_description(output_mode)}.
+
+    Two models are supported:
+    - music_v2 (default): latest model. Composition plans use a `chunks` array where each chunk is either a `GenerationChunk` (text, duration_ms, positive_styles, negative_styles, context_adherence, optional conditioning_ref + condition_strength) or an `AudioRefChunk` ({{song_id, range: {{start_ms, end_ms}}}}) for inpainting. Inpainting also requires the source song to have been stored — call this tool with store_for_inpainting=True or use upload_music_for_inpainting first to get a song_id.
+    - music_v1: legacy model. Composition plans use positive_global_styles, negative_global_styles, sections.
 
     Args:
         prompt: Prompt to convert to music. Must provide either prompt or composition_plan.
         output_directory: Directory to save the output audio file
-        composition_plan: Composition plan to use for the music. Must provide either prompt or composition_plan.
-        music_length_ms: Length of the generated music in milliseconds. Cannot be used if composition_plan is provided.
+        composition_plan: Composition plan dict. Shape depends on model_id (see above). Must provide either prompt or composition_plan.
+        music_length_ms: Length of the generated music in milliseconds (3000-600000). Cannot be used if composition_plan is provided.
+        model_id: Which music model to use. One of "music_v1" or "music_v2". Defaults to "music_v2".
+        force_instrumental: If True, the model will avoid generating lyrics/vocals.
+        store_for_inpainting: If True, the generated song is stored server-side and the returned song_id can be used in later inpainting calls (as an AudioRefChunk.song_id, or conditioning_ref).
+        seed: Optional integer seed for reproducible generation (music_v2 only).
 
-    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user."""
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.""",
 )
 def compose_music(
     prompt: str | None = None,
     output_directory: str | None = None,
-    composition_plan: MusicPrompt | None = None,
+    composition_plan: dict | None = None,
     music_length_ms: int | None = None,
+    model_id: Literal["music_v1", "music_v2"] = "music_v2",
+    force_instrumental: bool = False,
+    store_for_inpainting: bool = False,
+    seed: int | None = None,
 ) -> Union[TextContent, EmbeddedResource]:
     if prompt is None and composition_plan is None:
         make_error(
@@ -1218,40 +1234,171 @@ def compose_music(
     output_path = make_output_path(output_directory, base_path)
     output_file_name = make_output_file("music", "", "mp3")
 
-    audio_data = client.music.compose(
-        prompt=prompt,
-        music_length_ms=music_length_ms,
-        composition_plan=composition_plan,
+    plan: CompositionPlan | MusicPrompt | None = None
+    if composition_plan is not None:
+        if "chunks" in composition_plan:
+            plan = CompositionPlan.model_validate(composition_plan)
+        else:
+            plan = MusicPrompt.model_validate(composition_plan)
+
+    song_id: str | None = None
+    if store_for_inpainting:
+        detailed = client.music.compose_detailed(
+            prompt=prompt,
+            music_length_ms=music_length_ms,
+            composition_plan=plan,
+            model_id=model_id,  # type: ignore[arg-type]
+            force_instrumental=force_instrumental,
+            store_for_inpainting=True,
+        )
+        audio_bytes = detailed.audio
+        song_id = detailed.song_id
+    else:
+        audio_data = client.music.compose(
+            prompt=prompt,
+            music_length_ms=music_length_ms,
+            composition_plan=plan,
+            model_id=model_id,
+            force_instrumental=force_instrumental,
+            seed=seed,
+        )
+        audio_bytes = b"".join(audio_data)
+
+    success_message = f"Success. File saved as: {{file_path}}. Model: {model_id}." + (
+        f" song_id (for inpainting): {song_id}" if song_id else ""
     )
-
-    audio_bytes = b"".join(audio_data)
-
-    # Handle different output modes
-    return handle_output_mode(audio_bytes, output_path, output_file_name, output_mode)
+    return handle_output_mode(
+        audio_bytes, output_path, output_file_name, output_mode, success_message
+    )
 
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     description="""Create a composition plan for music generation. Usage of this endpoint does not cost any credits but is subject to rate limiting depending on your tier. Composition plans can be used when generating music with the compose_music tool.
 
+    The returned plan shape depends on model_id:
+    - music_v2 (default): `{"chunks": [GenerationChunk | AudioRefChunk, ...]}`. Each GenerationChunk has `text`, `duration_ms`, `positive_styles`, `negative_styles`, `context_adherence` and optional `conditioning_ref` + `condition_strength`. AudioRefChunks reference a stored song via `song_id` and `range: {start_ms, end_ms}` for inpainting.
+    - music_v1: `{"positive_global_styles": [...], "negative_global_styles": [...], "sections": [...]}`.
+
     Args:
         prompt: Prompt to create a composition plan for
         music_length_ms: The length of the composition plan to generate in milliseconds. Must be between 10000ms and 300000ms. Optional - if not provided, the model will choose a length based on the prompt.
-        source_composition_plan: An optional composition plan to use as a source for the new composition plan
-    """
+        source_composition_plan: An optional composition plan dict to use as a source for the new composition plan. Should match the shape of the model_id you request.
+        model_id: Which music model to plan for. One of "music_v1" or "music_v2". Defaults to "music_v2".
+    """,
 )
 def create_composition_plan(
     prompt: str,
     music_length_ms: int | None = None,
-    source_composition_plan: MusicPrompt | None = None,
-) -> MusicPrompt:
+    source_composition_plan: dict | None = None,
+    model_id: Literal["music_v1", "music_v2"] = "music_v2",
+) -> dict:
+    source: CompositionPlan | MusicPrompt | None = None
+    if source_composition_plan is not None:
+        if "chunks" in source_composition_plan:
+            source = CompositionPlan.model_validate(source_composition_plan)
+        else:
+            source = MusicPrompt.model_validate(source_composition_plan)
+
     composition_plan = client.music.composition_plan.create(
         prompt=prompt,
         music_length_ms=music_length_ms,
-        source_composition_plan=source_composition_plan,
+        source_composition_plan=source,
+        model_id=model_id,
     )
 
-    return composition_plan
+    return composition_plan.model_dump(exclude_none=True)
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description=f"""Generate background music for one or more video files. {get_output_mode_description(output_mode)}.
+
+    The videos are concatenated server-side in the order provided; the generated score targets the combined duration. Constraints: 1-10 videos per call, combined size <= 200 MB, combined duration <= 600 seconds.
+
+    Args:
+        input_file_paths: Paths to the video files. Order is preserved.
+        description: Optional natural-language direction for the music (e.g. "Build suspense, then resolve with a warm cinematic finish.").
+        tags: Optional list of up to 10 short style cues (e.g. ["cinematic", "suspenseful", "uplifting"]).
+        model_id: Which music model to use. One of "music_v1" or "music_v2". Defaults to "music_v2".
+        output_directory: Directory to save the generated audio file. Defaults to $HOME/Desktop.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+    """,
+)
+def video_to_music(
+    input_file_paths: list[str],
+    description: str | None = None,
+    tags: list[str] | None = None,
+    model_id: Literal["music_v1", "music_v2"] = "music_v2",
+    output_directory: str | None = None,
+) -> Union[TextContent, EmbeddedResource]:
+    if not 1 <= len(input_file_paths) <= 10:
+        make_error("Provide between 1 and 10 video files.")
+
+    video_paths = [
+        handle_input_file(p, audio_content_check=False) for p in input_file_paths
+    ]
+
+    output_path = make_output_path(output_directory, base_path)
+    output_file_name = make_output_file("v2m", video_paths[0].name, "mp3")
+
+    file_handles: list[IO[bytes]] = [p.open("rb") for p in video_paths]
+    try:
+        audio_data = client.music.video_to_music(
+            videos=cast(list, file_handles),
+            description=description,
+            tags=tags,
+            model_id=model_id,
+        )
+        audio_bytes = b"".join(audio_data)
+    finally:
+        for f in file_handles:
+            f.close()
+
+    success_message = f"Success. File saved as: {{file_path}}. Model: {model_id}."
+    return handle_output_mode(
+        audio_bytes, output_path, output_file_name, output_mode, success_message
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
+    description="""Upload an existing audio file to ElevenLabs so it can be referenced in music_v2 inpainting workflows. Returns a song_id you can plug into a composition plan's AudioRefChunks (or a generation chunk's conditioning_ref) to edit or extend the track via the compose_music tool.
+
+    Optionally extracts a composition plan from the uploaded audio so you have a starting point to mutate.
+
+    Note: this endpoint is gated to enterprise customers with inpainting access.
+
+    Args:
+        input_file_path: Path to a local audio file to upload.
+        extract_composition_plan: Which model to extract a composition plan for ("music_v1" or "music_v2"). Pass None to skip extraction. Defaults to "music_v2".
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+    """,
+)
+def upload_music_for_inpainting(
+    input_file_path: str,
+    extract_composition_plan: Literal["music_v1", "music_v2"] | None = "music_v2",
+) -> TextContent:
+    file_path = handle_input_file(input_file_path)
+    with file_path.open("rb") as f:
+        result = client.music.upload(
+            file=f,
+            extract_composition_plan=extract_composition_plan,
+        )
+
+    plan_section = ""
+    if result.composition_plan is not None:
+        plan_json = result.composition_plan.model_dump_json(indent=2, exclude_none=True)
+        plan_section = (
+            f"\n\nExtracted composition plan ({extract_composition_plan}):\n{plan_json}"
+        )
+
+    return TextContent(
+        type="text",
+        text=f"song_id: {result.song_id}{plan_section}",
+    )
 
 
 def _is_broken_pipe_error(exc: BaseException) -> bool:
@@ -1269,7 +1416,7 @@ def main():
     try:
         mcp.run()
     except (BrokenPipeError, KeyboardInterrupt):
-        pass    # Ignore broken pipe and keyboard interrupt errors
+        pass  # Ignore broken pipe and keyboard interrupt errors
     except (Exception, BaseExceptionGroup) as err:
         if not _is_broken_pipe_error(err):
             raise

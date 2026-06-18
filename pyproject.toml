@@ -33,7 +33,7 @@ dependencies = [
     "python-dotenv==1.0.1",
     "pydantic>=2.12",
     "httpx==0.28.1",
-    "elevenlabs>=2.13.0",
+    "elevenlabs>=2.53.0",
     "fuzzywuzzy==0.18.0",
     "python-Levenshtein>=0.25.0",
     "sounddevice==0.5.1",
