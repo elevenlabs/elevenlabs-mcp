@@ -834,6 +834,7 @@ Transcript:
     
 
 @mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
     description="""Simulate a text conversation between a conversational AI agent and a
     simulated user. Runs the full conversation and returns the transcript plus analysis.
 
@@ -878,21 +879,24 @@ def simulate_conversation(
                     id=c["id"],
                     name=c["name"],
                     conversation_goal_prompt=c["conversation_goal_prompt"],
-                    use_knowledge_base=False,
+                    use_knowledge_base=c.get("use_knowledge_base", False),
                 )
             )
 
-    response = client.conversational_ai.agents.simulate_conversation(
-        agent_id=agent_id,
-        simulation_specification={
-            "simulated_user_config": {
-                "prompt": simulated_user_prompt,
-                **({"first_message": first_message} if first_message else {}),
-            }
-        },
-        extra_evaluation_criteria=criteria_objects if criteria_objects else None,
-        new_turns_limit=max_turns,
-    )
+    try:
+        response = client.conversational_ai.agents.simulate_conversation(
+            agent_id=agent_id,
+            simulation_specification={
+                "simulated_user_config": {
+                    "prompt": simulated_user_prompt,
+                    **({"first_message": first_message} if first_message else {}),
+                }
+            },
+            extra_evaluation_criteria=criteria_objects if criteria_objects else None,
+            new_turns_limit=max_turns,
+        )
+    except Exception as e:
+        return make_error(f"Failed to simulate conversation: {str(e)}")
 
     lines = ["## Simulated Conversation\n"]
 
@@ -915,16 +919,14 @@ def simulate_conversation(
             lines.append(f"**Summary:** {summary}\n")
         call_successful = getattr(analysis, "call_successful", None)
         if call_successful:
-            icon = "✅" if call_successful == "success" else "❌"
-            lines.append(f"**Call result:** {icon} {call_successful}\n")
+            lines.append(f"**Call result:** {call_successful}\n")
         eval_results = getattr(analysis, "evaluation_criteria_results", {}) or {}
         if eval_results:
             lines.append("**Criteria results:**")
             for key, result in eval_results.items():
                 r = getattr(result, "result", "unknown")
                 rationale = getattr(result, "rationale", "")
-                icon = "✅" if r == "success" else "❌"
-                lines.append(f"  {icon} **{key}**: {r} — {rationale}")
+                lines.append(f"  **{key}**: {r} — {rationale}")
 
     return TextContent(type="text", text="\n".join(lines))
 
