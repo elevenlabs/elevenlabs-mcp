@@ -233,14 +233,14 @@ def test_handle_input_file():
 def test_simulate_conversation_bad_criteria_returns_error():
     """Missing fields in evaluation criteria should return an error without calling API."""
     with patch("elevenlabs_mcp.server.client") as mock_client:
-        result = simulate_conversation(
-            agent_id="agent_abc",
-            simulated_user_prompt="Be difficult.",
-            extra_evaluation_criteria=[{"id": "check"}],  # missing name + goal
-        )
-        assert "missing" in result.text.lower()
+        with pytest.raises(ElevenLabsMcpError, match="missing"):
+            simulate_conversation(
+                agent_id="agent_abc",
+                simulated_user_prompt="Be difficult.",
+                extra_evaluation_criteria=[{"id": "check"}], 
+            )
+        
         mock_client.conversational_ai.agents.simulate_conversation.assert_not_called()
-
 
 def test_simulate_conversation_formats_transcript():
     """Conversation turns should appear correctly in output."""
@@ -272,7 +272,7 @@ def test_simulate_conversation_formats_transcript():
         assert "I need help with billing." in result.text
         assert "I can help you with that." in result.text
         assert "Billing issue resolved." in result.text
-        assert "✅" in result.text
+        assert "success" in result.text
 
 
 def test_simulate_conversation_handles_empty_response():

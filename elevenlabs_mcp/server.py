@@ -870,10 +870,11 @@ def simulate_conversation(
         for c in extra_evaluation_criteria:
             missing = [k for k in ("id", "name", "conversation_goal_prompt") if k not in c]
             if missing:
-                return make_error(
+                make_error(
                     f"Evaluation criterion missing fields {missing}. "
                     "Each criterion needs 'id', 'name', and 'conversation_goal_prompt'."
                 )
+                return TextContent(type="text", text="")
             criteria_objects.append(
                 PromptEvaluationCriteria(
                     id=c["id"],
@@ -896,7 +897,8 @@ def simulate_conversation(
             new_turns_limit=max_turns,
         )
     except Exception as e:
-        return make_error(f"Failed to simulate conversation: {str(e)}")
+        make_error(f"Failed to simulate conversation: {str(e)}")
+        return TextContent(type="text", text="")
 
     lines = ["## Simulated Conversation\n"]
 
