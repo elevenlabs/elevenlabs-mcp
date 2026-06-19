@@ -1,4 +1,6 @@
 import os
+import re
+import sys
 import tempfile
 import base64
 from pathlib import Path
@@ -21,6 +23,22 @@ def make_error(error_text: str):
     raise ElevenLabsMcpError(error_text)
 
 
+_UNSUBSTITUTED_TEMPLATE_PATTERN = re.compile(r"^\s*(\$\{[^}\s]+\}|\{\{[^}\s]+\}\})\s*$")
+
+
+def looks_like_unsubstituted_template(value: str | None) -> bool:
+    """Return True when ``value`` is a placeholder like ``${...}`` or ``{{...}}``.
+
+    Plugin marketplaces (e.g. the Cowork wrapper) sometimes ship the raw
+    template through as a config value when substitution fails. Treating
+    such values as real paths leads to ``mkdir '${user_config.output_dir}'``
+    style ``ENOENT`` failures, so callers should fall back to a default.
+    """
+    if not value:
+        return False
+    return bool(_UNSUBSTITUTED_TEMPLATE_PATTERN.match(value))
+
+
 def is_file_writeable(path: Path) -> bool:
     if path.exists():
         return os.access(path, os.W_OK)
@@ -40,17 +58,32 @@ def make_output_file(
 def make_output_path(
     output_directory: str | None, base_path: str | None = None
 ) -> Path:
+    if looks_like_unsubstituted_template(base_path):
+        print(
+            f"Warning: ELEVENLABS_MCP_BASE_PATH looks like an unsubstituted "
+            f"template ({base_path!r}); falling back to $HOME/Desktop.",
+            file=sys.stderr,
+        )
+        base_path = None
+    if looks_like_unsubstituted_template(output_directory):
+        print(
+            f"Warning: output_directory looks like an unsubstituted "
+            f"template ({output_directory!r}); ignoring.",
+            file=sys.stderr,
+        )
+        output_directory = None
+
     # Use None as the default, and provide a default when an empty string is passed
     if not base_path:
         base_path = str(Path.home() / "Desktop")
-    
+
     if output_directory is None:
         output_path = Path(os.path.expanduser(base_path))
     elif os.path.isabs(output_directory):
         output_path = Path(os.path.expanduser(output_directory))
     else:
         output_path = Path(os.path.expanduser(base_path)) / Path(output_directory)
-    
+
     if not is_file_writeable(output_path):
         make_error(f"Directory ({output_path}) is not writeable")
     output_path.mkdir(parents=True, exist_ok=True)
@@ -267,6 +300,8 @@ def parse_location(api_residency: str | None) -> str:
         raise ValueError(f"ELEVENLABS_API_RESIDENCY must be one of {valid_options}")
 
     return origin_map[api_residency]
+
+
 def get_mime_type(file_extension: str) -> str:
     """
     Get MIME type for a given file extension.
@@ -332,7 +367,7 @@ def create_resource_response(
     """
     mime_type = get_mime_type(file_extension)
     if directory is not None:
-        full_path = (directory / filename)
+        full_path = directory / filename
         resource_uri = f"elevenlabs://{full_path.as_posix()}"
     else:
         resource_uri = generate_resource_uri(filename)
@@ -399,14 +434,18 @@ def handle_output_mode(
 
     elif output_mode == "resources":
         # Return as EmbeddedResource without saving to disk
-        return create_resource_response(file_data, filename, file_extension, directory=output_path)
+        return create_resource_response(
+            file_data, filename, file_extension, directory=output_path
+        )
 
     elif output_mode == "both":
         # Save to disk AND return as EmbeddedResource
         output_path.mkdir(parents=True, exist_ok=True)
         with open(full_file_path, "wb") as f:
             f.write(file_data)
-        return create_resource_response(file_data, filename, file_extension, directory=output_path)
+        return create_resource_response(
+            file_data, filename, file_extension, directory=output_path
+        )
 
     else:
         raise ValueError(

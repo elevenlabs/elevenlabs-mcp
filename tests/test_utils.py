@@ -11,6 +11,7 @@ from elevenlabs_mcp.utils import (
     find_similar_filenames,
     try_find_similar_files,
     handle_input_file,
+    looks_like_unsubstituted_template,
     parse_location,
     resolve_resource_path,
 )
@@ -71,11 +72,11 @@ def test_make_output_path_relative_no_base_path():
         # Create Desktop directory so the parent exists
         desktop_dir = mock_home / "Desktop"
         desktop_dir.mkdir()
-        
+
         with patch("elevenlabs_mcp.utils.Path.home", return_value=mock_home):
             relative_subdir = "test_subdir"
             expected = desktop_dir / relative_subdir
-            
+
             result = make_output_path(relative_subdir, None)
             assert result == expected
             assert result.exists()
@@ -100,6 +101,60 @@ def test_make_output_path_relative_with_base():
         assert result == Path(temp_dir) / relative_subdir
         assert result.exists()
         assert result.is_dir()
+
+
+def test_looks_like_unsubstituted_template_detects_dollar_brace():
+    assert looks_like_unsubstituted_template("${user_config.output_dir}")
+    assert looks_like_unsubstituted_template("  ${user_config.output_dir}  ")
+
+
+def test_looks_like_unsubstituted_template_detects_double_brace():
+    assert looks_like_unsubstituted_template("{{user_config.output_dir}}")
+
+
+def test_looks_like_unsubstituted_template_rejects_real_paths():
+    assert not looks_like_unsubstituted_template("/tmp/output")
+    assert not looks_like_unsubstituted_template("/tmp/$weird/dir")
+    assert not looks_like_unsubstituted_template("~/Desktop")
+    assert not looks_like_unsubstituted_template("")
+    assert not looks_like_unsubstituted_template(None)
+    # A path that merely contains a brace expression in the middle isn't a placeholder.
+    assert not looks_like_unsubstituted_template("/tmp/${x}/y")
+
+
+def test_make_output_path_unsubstituted_base_path_falls_back_to_default(capsys):
+    """Cowork plugin wrapper bug: literal '${user_config.output_dir}' must not crash."""
+    with tempfile.TemporaryDirectory() as temp_home:
+        mock_home = Path(temp_home)
+        desktop = mock_home / "Desktop"
+        desktop.mkdir()
+        with patch("elevenlabs_mcp.utils.Path.home", return_value=mock_home):
+            result = make_output_path(None, "${user_config.output_dir}")
+            assert result == desktop
+            assert result.exists()
+        stderr = capsys.readouterr().err
+        assert "unsubstituted" in stderr
+
+
+def test_make_output_path_unsubstituted_double_brace_base_path(capsys):
+    with tempfile.TemporaryDirectory() as temp_home:
+        mock_home = Path(temp_home)
+        desktop = mock_home / "Desktop"
+        desktop.mkdir()
+        with patch("elevenlabs_mcp.utils.Path.home", return_value=mock_home):
+            result = make_output_path(None, "{{user_config.output_dir}}")
+            assert result == desktop
+            assert result.exists()
+
+
+def test_make_output_path_unsubstituted_output_directory_is_ignored(capsys):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        result = make_output_path("${user_config.subdir}", temp_dir)
+        # output_directory dropped → falls back to using base_path alone
+        assert result == Path(temp_dir)
+        assert result.exists()
+        stderr = capsys.readouterr().err
+        assert "unsubstituted" in stderr
 
 
 def test_resolve_resource_path_absolute_inside_base_dir(tmp_path):
