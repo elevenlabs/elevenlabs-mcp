@@ -854,6 +854,8 @@ Transcript:
             - name (str): human label e.g. "Issue Resolved"
             - conversation_goal_prompt (str): the assertion to check
               e.g. "The agent fully resolved the user's issue."
+            - use_knowledge_base (bool, optional): whether the evaluator should
+              reference the agent's knowledge base when judging. Defaults to False.
         max_turns: Maximum conversation turns. Defaults to 10.
     """
 )
@@ -893,7 +895,7 @@ def simulate_conversation(
                     **({"first_message": first_message} if first_message else {}),
                 }
             },
-            extra_evaluation_criteria=criteria_objects if criteria_objects else None,
+            extra_evaluation_criteria=criteria_objects or None,
             new_turns_limit=max_turns,
         )
     except Exception as e:
