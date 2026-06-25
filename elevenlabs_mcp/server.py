@@ -661,6 +661,7 @@ def create_agent(
         url: URL of the knowledge base.
         input_file_path: Path to the file to add to the knowledge base.
         text: Text to add to the knowledge base.
+        branch_id: Optional branch ID to target a specific branch of the agent
     """,
 )
 def add_knowledge_base_to_agent(
@@ -669,6 +670,7 @@ def add_knowledge_base_to_agent(
     url: str | None = None,
     input_file_path: str | None = None,
     text: str | None = None,
+    branch_id: str | None = None,
 ) -> TextContent:
     provided_params = [
         param for param in [url, input_file_path, text] if param is not None
@@ -703,7 +705,7 @@ def add_knowledge_base_to_agent(
             file=file,
         )
 
-    agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    agent = client.conversational_ai.agents.get(agent_id=agent_id, branch_id=branch_id)
 
     agent_config = agent.conversation_config.agent
     knowledge_base_list = (
@@ -723,7 +725,7 @@ def add_knowledge_base_to_agent(
         agent_config["prompt"]["knowledge_base"] = knowledge_base_list
 
     client.conversational_ai.agents.update(
-        agent_id=agent_id, conversation_config=agent.conversation_config
+        agent_id=agent_id, branch_id=branch_id, conversation_config=agent.conversation_config
     )
     return TextContent(
         type="text",
@@ -755,27 +757,170 @@ def list_agents() -> TextContent:
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="Get details about a specific conversational AI agent",
+    description="""Get details about a specific conversational AI agent.
+
+    Args:
+        agent_id: The ID of the agent to retrieve
+        branch_id: Optional branch ID to retrieve the agent configuration for a specific branch
+    """,
 )
-def get_agent(agent_id: str) -> TextContent:
+def get_agent(agent_id: str, branch_id: str | None = None) -> TextContent:
     """Get details about a specific conversational AI agent.
 
     Args:
         agent_id: The ID of the agent to retrieve
+        branch_id: Optional branch ID to retrieve the agent configuration for a specific branch
 
     Returns:
         TextContent with detailed information about the agent
     """
-    response = client.conversational_ai.agents.get(agent_id=agent_id)
+    response = client.conversational_ai.agents.get(agent_id=agent_id, branch_id=branch_id)
 
     voice_info = "None"
     if response.conversation_config.tts:
         voice_info = f"Voice ID: {response.conversation_config.tts.voice_id}"
 
+    branch_info = ""
+    if response.branch_id:
+        branch_info = f", Branch ID: {response.branch_id}"
+    if response.main_branch_id:
+        branch_info += f", Main Branch ID: {response.main_branch_id}"
+
+    mcp_server_info = ""
+    agent_config = response.conversation_config.agent
+    if agent_config:
+        prompt = agent_config.get("prompt", {}) if isinstance(agent_config, dict) else getattr(agent_config, "prompt", None)
+        if prompt:
+            mcp_ids = prompt.get("mcp_server_ids", []) if isinstance(prompt, dict) else getattr(prompt, "mcp_server_ids", None)
+            if mcp_ids:
+                mcp_server_info = f", MCP Server IDs: {', '.join(mcp_ids)}"
+
     return TextContent(
         type="text",
-        text=f"Agent Details: Name: {response.name}, Agent ID: {response.agent_id}, Voice Configuration: {voice_info}, Created At: {datetime.fromtimestamp(response.metadata.created_at_unix_secs).strftime('%Y-%m-%d %H:%M:%S')}",
+        text=f"Agent Details: Name: {response.name}, Agent ID: {response.agent_id}, Voice Configuration: {voice_info}{branch_info}{mcp_server_info}, Created At: {datetime.fromtimestamp(response.metadata.created_at_unix_secs).strftime('%Y-%m-%d %H:%M:%S')}",
     )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="List all MCP server integrations configured in the workspace",
+)
+def list_mcp_servers() -> TextContent:
+    """List all MCP server integrations in the workspace.
+
+    Returns:
+        TextContent with a formatted list of MCP server integrations
+    """
+    response = client.conversational_ai.mcp_servers.list()
+
+    servers = response.mcp_servers if hasattr(response, "mcp_servers") else []
+    if not servers:
+        return TextContent(type="text", text="No MCP server integrations found.")
+
+    server_list = []
+    for server in servers:
+        config = server.config
+        agent_count = len(server.dependent_agents) if server.dependent_agents else 0
+        server_list.append(
+            f"{config.name} (ID: {server.id}, URL: {config.url}, Dependent Agents: {agent_count})"
+        )
+
+    return TextContent(
+        type="text",
+        text=f"MCP Server Integrations: {', '.join(server_list)}",
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""Get details about a specific MCP server integration, including its dependent agents.
+
+    When agent_id and branch_id are provided, also retrieves the agent's configuration
+    for that specific branch to verify MCP server usage on that branch.
+
+    Args:
+        mcp_server_id: The ID of the MCP server integration to retrieve
+        agent_id: Optional agent ID to look up branch-specific configuration for a dependent agent
+        branch_id: Optional branch ID (requires agent_id) to retrieve branch-specific agent configuration
+    """,
+)
+def get_mcp_server(
+    mcp_server_id: str,
+    agent_id: str | None = None,
+    branch_id: str | None = None,
+) -> TextContent:
+    """Get details about a specific MCP server integration.
+
+    Args:
+        mcp_server_id: The ID of the MCP server integration
+        agent_id: Optional agent ID for branch-specific lookup
+        branch_id: Optional branch ID for branch-specific lookup (requires agent_id)
+
+    Returns:
+        TextContent with MCP server details and dependent agents
+    """
+    response = client.conversational_ai.mcp_servers.get(mcp_server_id=mcp_server_id)
+
+    config = response.config
+    details = [
+        f"MCP Server Details:",
+        f"  ID: {response.id}",
+        f"  Name: {config.name}",
+        f"  URL: {config.url}",
+    ]
+
+    if config.description:
+        details.append(f"  Description: {config.description}")
+    if config.approval_policy:
+        details.append(f"  Approval Policy: {config.approval_policy}")
+    if config.response_timeout_secs:
+        details.append(f"  Response Timeout: {config.response_timeout_secs}s")
+
+    if response.dependent_agents:
+        details.append(f"\nDependent Agents ({len(response.dependent_agents)}):")
+        for agent in response.dependent_agents:
+            agent_type = getattr(agent, "type", "unknown")
+            agent_name = getattr(agent, "name", "Unknown")
+            details.append(f"  - {agent_name} (ID: {agent.id}, Type: {agent_type})")
+
+    if agent_id and branch_id:
+        try:
+            agent_response = client.conversational_ai.agents.get(
+                agent_id=agent_id, branch_id=branch_id
+            )
+            details.append(f"\nAgent Branch Details (agent_id={agent_id}, branch_id={branch_id}):")
+            details.append(f"  Name: {agent_response.name}")
+            if agent_response.branch_id:
+                details.append(f"  Branch ID: {agent_response.branch_id}")
+            if agent_response.main_branch_id:
+                details.append(f"  Main Branch ID: {agent_response.main_branch_id}")
+
+            agent_config = agent_response.conversation_config.agent
+            if agent_config:
+                prompt = agent_config.get("prompt", {}) if isinstance(agent_config, dict) else getattr(agent_config, "prompt", None)
+                if prompt:
+                    mcp_ids = prompt.get("mcp_server_ids", []) if isinstance(prompt, dict) else getattr(prompt, "mcp_server_ids", None)
+                    if mcp_ids:
+                        uses_this_server = mcp_server_id in mcp_ids
+                        details.append(f"  MCP Server IDs: {', '.join(mcp_ids)}")
+                        details.append(f"  Uses this MCP Server: {uses_this_server}")
+                    else:
+                        details.append(f"  MCP Server IDs: None")
+        except Exception as e:
+            details.append(f"\nFailed to fetch agent branch details: {str(e)}")
+    elif agent_id:
+        try:
+            agent_response = client.conversational_ai.agents.get(agent_id=agent_id)
+            details.append(f"\nAgent Details (agent_id={agent_id}):")
+            details.append(f"  Name: {agent_response.name}")
+            if agent_response.branch_id:
+                details.append(f"  Branch ID: {agent_response.branch_id}")
+            if agent_response.main_branch_id:
+                details.append(f"  Main Branch ID: {agent_response.main_branch_id}")
+        except Exception as e:
+            details.append(f"\nFailed to fetch agent details: {str(e)}")
+
+    return TextContent(type="text", text="\n".join(details))
 
 
 @mcp.tool(
