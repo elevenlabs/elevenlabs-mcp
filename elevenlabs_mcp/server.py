@@ -661,6 +661,7 @@ def create_agent(
         url: URL of the knowledge base.
         input_file_path: Path to the file to add to the knowledge base.
         text: Text to add to the knowledge base.
+        branch_id: Optional branch ID to target a specific branch of the agent
     """,
 )
 def add_knowledge_base_to_agent(
@@ -669,6 +670,7 @@ def add_knowledge_base_to_agent(
     url: str | None = None,
     input_file_path: str | None = None,
     text: str | None = None,
+    branch_id: str | None = None,
 ) -> TextContent:
     provided_params = [
         param for param in [url, input_file_path, text] if param is not None
@@ -703,7 +705,7 @@ def add_knowledge_base_to_agent(
             file=file,
         )
 
-    agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    agent = client.conversational_ai.agents.get(agent_id=agent_id, branch_id=branch_id)
 
     agent_config = agent.conversation_config.agent
     knowledge_base_list = (
@@ -723,7 +725,7 @@ def add_knowledge_base_to_agent(
         agent_config["prompt"]["knowledge_base"] = knowledge_base_list
 
     client.conversational_ai.agents.update(
-        agent_id=agent_id, conversation_config=agent.conversation_config
+        agent_id=agent_id, branch_id=branch_id, conversation_config=agent.conversation_config
     )
     return TextContent(
         type="text",
@@ -755,18 +757,24 @@ def list_agents() -> TextContent:
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-    description="Get details about a specific conversational AI agent",
+    description="""Get details about a specific conversational AI agent.
+
+    Args:
+        agent_id: The ID of the agent to retrieve
+        branch_id: Optional branch ID to retrieve the agent configuration for a specific branch
+    """,
 )
-def get_agent(agent_id: str) -> TextContent:
+def get_agent(agent_id: str, branch_id: str | None = None) -> TextContent:
     """Get details about a specific conversational AI agent.
 
     Args:
         agent_id: The ID of the agent to retrieve
+        branch_id: Optional branch ID to retrieve the agent configuration for a specific branch
 
     Returns:
         TextContent with detailed information about the agent
     """
-    response = client.conversational_ai.agents.get(agent_id=agent_id)
+    response = client.conversational_ai.agents.get(agent_id=agent_id, branch_id=branch_id)
 
     voice_info = "None"
     if response.conversation_config.tts:
