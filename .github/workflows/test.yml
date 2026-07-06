@@ -30,6 +30,8 @@ jobs:
           uv pip install --system -e ".[dev]"
 
       - name: Run tests
+        env:
+          ELEVENLABS_API_KEY: dummy
         run: |
           uv run pytest --cov=elevenlabs_mcp --cov-report=xml
 
