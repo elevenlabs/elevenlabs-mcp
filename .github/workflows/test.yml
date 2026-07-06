@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         python-version:
           - "3.11"
@@ -30,6 +31,14 @@ jobs:
           uv pip install --system -e ".[dev]"
 
       - name: Run tests
+        # httpcore 1.0.9 (latest) still raises AttributeError on import under
+        # Python 3.14 — the setattr(..., "__module__", ...) loop in
+        # httpcore/__init__.py only exempts SOCKET_OPTION; another
+        # typing.Union alias in __all__ still trips it. No fix released yet.
+        # Don't block the check on 3.14 until upstream ships a fix.
+        continue-on-error: ${{ matrix.python-version == '3.14' }}
+        env:
+          ELEVENLABS_API_KEY: dummy
         run: |
           uv run pytest --cov=elevenlabs_mcp --cov-report=xml
 
