@@ -16,7 +16,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.14"
+          # Match the minimum supported version. 3.14 currently fails to
+          # import httpcore (see test.yml comment); the wheel is pure-Python
+          # so the build interpreter doesn't matter.
+          python-version: "3.11"
 
       - name: Install uv
         run: pip install uv
@@ -43,6 +46,8 @@ jobs:
           uv pip install --system -e ".[dev]"
 
       - name: Run tests
+        env:
+          ELEVENLABS_API_KEY: dummy
         run: |
           uv run pytest --cov=elevenlabs_mcp
 
