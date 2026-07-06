@@ -211,12 +211,12 @@ def get_elevenlabs_resource(filename: str) -> Resource:
         text (str): The text to convert to speech.
         voice_name (str, optional): The name of the voice to use.
         model_id (str, optional): The model ID to use for speech synthesis. Options include:
+            - eleven_v3: High quality model with most expressive voices
             - eleven_multilingual_v2: High quality multilingual model (29 languages)
             - eleven_flash_v2_5: Fastest model with ultra-low latency (32 languages)
             - eleven_turbo_v2_5: Balanced quality and speed (32 languages)
             - eleven_flash_v2: Fast English-only model
             - eleven_turbo_v2: Balanced English-only model
-            - eleven_monolingual_v1: Legacy English model
             Defaults to eleven_multilingual_v2 or environment variable ELEVENLABS_MODEL_ID.
         stability (float, optional): Stability of the generated audio. Determines how stable the voice is and the randomness between each generation. Lower values introduce broader emotional range for the voice. Higher values can result in a monotonous voice with limited emotion. Range is 0 to 1.
         similarity_boost (float, optional): Similarity boost of the generated audio. Determines how closely the AI should adhere to the original voice when attempting to replicate it. Range is 0 to 1.
@@ -356,7 +356,7 @@ def speech_to_text(
         language_code = None
 
     transcription = client.speech_to_text.convert(
-        model_id="scribe_v1",
+        model_id="scribe_v2",
         file=audio_bytes,
         language_code=language_code,
         enable_logging=True,
@@ -831,7 +831,7 @@ Transcript:
         make_error(f"Failed to fetch conversation: {str(e)}")
         # satisfies type checker
         return TextContent(type="text", text="")
-    
+
 
 @mcp.tool(
     annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True),
@@ -857,7 +857,7 @@ Transcript:
             - use_knowledge_base (bool, optional): whether the evaluator should
               reference the agent's knowledge base when judging. Defaults to False.
         max_turns: Maximum conversation turns. Defaults to 10.
-    """
+    """,
 )
 def simulate_conversation(
     agent_id: str,
@@ -870,7 +870,9 @@ def simulate_conversation(
     criteria_objects = []
     if extra_evaluation_criteria:
         for c in extra_evaluation_criteria:
-            missing = [k for k in ("id", "name", "conversation_goal_prompt") if k not in c]
+            missing = [
+                k for k in ("id", "name", "conversation_goal_prompt") if k not in c
+            ]
             if missing:
                 make_error(
                     f"Evaluation criterion missing fields {missing}. "
@@ -933,6 +935,7 @@ def simulate_conversation(
                 lines.append(f"  **{key}**: {r} — {rationale}")
 
     return TextContent(type="text", text="\n".join(lines))
+
 
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
