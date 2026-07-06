@@ -8,11 +8,19 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         python-version:
           - "3.11"
           - "3.14"
+        include:
+          # httpcore 1.0.9 still fails to import on Python 3.14 (typing.Union
+          # setattr in httpcore/__init__.py); no upstream fix released yet.
+          # Keep the job for signal but don't block merges on it.
+          - python-version: "3.14"
+            experimental: true
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental == true }}
     name: test (using Python v${{ matrix.python-version }})
     steps:
       - uses: actions/checkout@v3
