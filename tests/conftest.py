@@ -1,6 +1,11 @@
 import pytest
 from pathlib import Path
 import tempfile
+import os
+
+# server.py reads ELEVENLABS_API_KEY at import time; set a dummy value so
+# server-level tests can import it without a real key.
+os.environ.setdefault("ELEVENLABS_API_KEY", "test-key")
 
 
 @pytest.fixture
