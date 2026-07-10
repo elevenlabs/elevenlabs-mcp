@@ -41,6 +41,16 @@ mcp-name: io.github.elevenlabs/elevenlabs-mcp
 
 If you're using Windows, you will have to enable "Developer Mode" in Claude Desktop to use the MCP server. Click "Help" in the hamburger menu at the top left and select "Enable Developer Mode".
 
+## Autohand Code
+
+Register the published server with [Autohand Code](https://github.com/autohandai/code-cli/):
+
+```bash
+autohand mcp add ElevenLabs env ELEVENLABS_API_KEY=insert-your-api-key-here uvx elevenlabs-mcp
+```
+
+Add `--scope project` after `mcp add` to keep the registration in the current workspace.
+
 ## Other MCP clients
 
 For other clients like Cursor and Windsurf, run:
@@ -175,6 +185,5 @@ which uvx
 ```
 
 Once you obtain the absolute path (e.g., `/usr/local/bin/uvx`), update your configuration to use that path (e.g., `"command": "/usr/local/bin/uvx"`). This ensures that the correct executable is referenced.
-
 
 
