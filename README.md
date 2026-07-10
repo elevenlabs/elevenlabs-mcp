@@ -61,6 +61,7 @@ Try asking Claude:
 - "Create a soundscape of a thunderstorm in a dense jungle with animals reacting to the weather"
 - "Turn this speech into text, identify different speakers, then convert it back using unique voices for each person"
 - "Dub this video into Spanish, then download the dubbed file and its subtitles once it's ready"
+- "Create a pronunciation dictionary so 'FullPhysio' is always read correctly, then use it to generate this narration"
 
 ## Optional features
 

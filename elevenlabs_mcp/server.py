@@ -247,6 +247,9 @@ def get_elevenlabs_resource(filename: str) -> Resource:
             opus_48000_96
             opus_48000_128
             opus_48000_192
+        pronunciation_dictionary_locators (list, optional): Pronunciation dictionaries to apply,
+            as a list of locators, each a dict {{"pronunciation_dictionary_id": "...", "version_id": "..."}}.
+            Create dictionaries with create_pronunciation_dictionary.
 
     Returns:
         Text content with file path or MCP resource with audio data, depending on output mode.
@@ -265,6 +268,7 @@ def text_to_speech(
     language: str = "en",
     output_format: str = "mp3_44100_128",
     model_id: str | None = None,
+    pronunciation_dictionary_locators: list[dict] | None = None,
 ) -> Union[TextContent, EmbeddedResource]:
     if text == "":
         make_error("Text is required.")
@@ -295,6 +299,12 @@ def text_to_speech(
             else "eleven_multilingual_v2"
         )
 
+    tts_kwargs = {}
+    if pronunciation_dictionary_locators:
+        tts_kwargs["pronunciation_dictionary_locators"] = (
+            pronunciation_dictionary_locators
+        )
+
     audio_data = client.text_to_speech.convert(
         text=text,
         voice_id=voice_id,
@@ -307,6 +317,7 @@ def text_to_speech(
             "use_speaker_boost": use_speaker_boost,
             "speed": speed,
         },
+        **tts_kwargs,
     )
     audio_bytes = b"".join(audio_data)
 
@@ -1793,6 +1804,195 @@ def render_dubbing(
             f"Poll get_dubbing('{dubbing_id}') until ready, then download with get_dubbed_file."
         ),
     )
+
+
+@mcp.tool(
+    description="""Create a pronunciation dictionary from inline rules or a lexicon file (PLS).
+
+    A pronunciation dictionary controls how specific words/phrases are pronounced in text-to-speech.
+    Provide exactly one source: `rules` (inline) OR `input_file_path` (a .pls/.txt lexicon file).
+
+    Each inline rule is a dict, either:
+      - alias:   {"string_to_replace": "TTS", "type": "alias", "alias": "text to speech"}
+      - phoneme: {"string_to_replace": "tomato", "type": "phoneme", "phoneme": "təˈmeɪtoʊ", "alphabet": "ipa"}
+
+    Apply the returned pronunciation_dictionary_id + version_id in text_to_speech via its
+    pronunciation_dictionary_locators argument.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        name: Name of the pronunciation dictionary.
+        rules: List of pronunciation rules (see formats above). Mutually exclusive with input_file_path.
+        input_file_path: Path to a .pls/.txt lexicon file. Mutually exclusive with rules.
+        description: Optional description of the dictionary.
+    """,
+)
+def create_pronunciation_dictionary(
+    name: str,
+    rules: list[dict] | None = None,
+    input_file_path: str | None = None,
+    description: str | None = None,
+) -> TextContent:
+    if bool(rules) == bool(input_file_path):
+        make_error("Provide exactly one of rules or input_file_path.")
+
+    if rules:
+        create_kwargs = {"rules": rules, "name": name}
+        if description:
+            create_kwargs["description"] = description
+        response = client.pronunciation_dictionaries.create_from_rules(**create_kwargs)
+    else:
+        file_path = handle_input_file(input_file_path, audio_content_check=False)
+        with file_path.open("rb") as f:
+            file_bytes = f.read()
+        create_kwargs = {
+            "name": name,
+            "file": (file_path.name, file_bytes, get_mime_type(file_path.suffix)),
+        }
+        if description:
+            create_kwargs["description"] = description
+        response = client.pronunciation_dictionaries.create_from_file(**create_kwargs)
+
+    return TextContent(
+        type="text",
+        text=(
+            f"Created pronunciation dictionary.\n"
+            f"pronunciation_dictionary_id: {response.id}\n"
+            f"version_id: {response.version_id}\n"
+            f"name: {response.name}\n"
+            f"rules: {response.version_rules_num}\n"
+            f"Apply it in text_to_speech via pronunciation_dictionary_locators="
+            f'[{{"pronunciation_dictionary_id": "{response.id}", "version_id": "{response.version_id}"}}].'
+        ),
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""List pronunciation dictionaries on the account.
+
+    Args:
+        page_size: Maximum number of dictionaries to return. Defaults to 20.
+    """,
+)
+def list_pronunciation_dictionaries(page_size: int = 20) -> TextContent:
+    page = client.pronunciation_dictionaries.list(page_size=page_size)
+    dictionaries = page.pronunciation_dictionaries
+    if not dictionaries:
+        return TextContent(type="text", text="No pronunciation dictionaries found.")
+    rows = [
+        f"- {d.id} | {d.name} | latest_version_id: {getattr(d, 'latest_version_id', '-')}"
+        for d in dictionaries
+    ]
+    return TextContent(
+        type="text", text="\n".join(rows) + f"\nhas_more: {page.has_more}"
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""Get a pronunciation dictionary's metadata.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+    """,
+)
+def get_pronunciation_dictionary(pronunciation_dictionary_id: str) -> TextContent:
+    d = client.pronunciation_dictionaries.get(pronunciation_dictionary_id)
+    lines = [
+        f"id: {d.id}",
+        f"name: {d.name}",
+        f"latest_version_id: {d.latest_version_id}",
+        f"rules: {d.latest_version_rules_num}",
+    ]
+    if d.description:
+        lines.append(f"description: {d.description}")
+    return TextContent(type="text", text="\n".join(lines))
+
+
+@mcp.tool(
+    description="""Add rules to an existing pronunciation dictionary (creates a new version).
+
+    Each rule is a dict — alias {"string_to_replace", "type": "alias", "alias"} or
+    phoneme {"string_to_replace", "type": "phoneme", "phoneme", "alphabet": "ipa"}.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+        rules: List of rules to add.
+    """,
+)
+def add_pronunciation_dictionary_rules(
+    pronunciation_dictionary_id: str,
+    rules: list[dict],
+) -> TextContent:
+    response = client.pronunciation_dictionaries.rules.add(
+        pronunciation_dictionary_id, rules=rules
+    )
+    return TextContent(
+        type="text",
+        text=(
+            f"Added {len(rules)} rule(s).\n"
+            f"new version_id: {response.version_id}\n"
+            f"total rules: {response.version_rules_num}"
+        ),
+    )
+
+
+@mcp.tool(
+    description="""Remove rules from a pronunciation dictionary by the strings they replace (creates a new version).
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+        rule_strings: List of 'string_to_replace' values whose rules should be removed.
+    """,
+)
+def remove_pronunciation_dictionary_rules(
+    pronunciation_dictionary_id: str,
+    rule_strings: list[str],
+) -> TextContent:
+    response = client.pronunciation_dictionaries.rules.remove(
+        pronunciation_dictionary_id, rule_strings=rule_strings
+    )
+    return TextContent(
+        type="text",
+        text=(
+            f"Removed {len(rule_strings)} rule(s).\n"
+            f"new version_id: {response.version_id}\n"
+            f"total rules: {response.version_rules_num}"
+        ),
+    )
+
+
+@mcp.tool(
+    description=f"""Download a pronunciation dictionary version as a PLS lexicon file. {get_output_mode_description(output_mode)}.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+        version_id: Version ID of the dictionary to download.
+        output_directory: Directory where files should be saved (only used when saving files).
+            Defaults to $HOME/Desktop if not provided.
+    """,
+)
+def download_pronunciation_dictionary(
+    pronunciation_dictionary_id: str,
+    version_id: str,
+    output_directory: str | None = None,
+) -> Union[TextContent, EmbeddedResource]:
+    output_path = make_output_path(output_directory, base_path)
+    pls_bytes = b"".join(
+        client.pronunciation_dictionaries.download(
+            pronunciation_dictionary_id, version_id
+        )
+    )
+    output_file_name = make_output_file(
+        "pronunciation_dictionary", pronunciation_dictionary_id, "pls", full_id=True
+    )
+    return handle_output_mode(pls_bytes, output_path, output_file_name, output_mode)
 
 
 def _is_broken_pipe_error(exc: BaseException) -> bool:

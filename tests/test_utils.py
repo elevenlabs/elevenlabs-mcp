@@ -16,7 +16,11 @@ from elevenlabs_mcp.utils import (
     resolve_resource_path,
     detect_dub_file_extension,
 )
-from elevenlabs_mcp.server import simulate_conversation, dub_audio_or_video
+from elevenlabs_mcp.server import (
+    simulate_conversation,
+    dub_audio_or_video,
+    create_pronunciation_dictionary,
+)
 
 
 def test_make_error():
@@ -358,3 +362,17 @@ def test_dub_audio_or_video_requires_exactly_one_source():
                 source_url="https://example.com/x.mp4",
             )
         mock_client.dubbing.create.assert_not_called()
+
+
+def test_create_pronunciation_dictionary_requires_exactly_one_source():
+    """Passing neither or both of rules/input_file_path errors without an API call."""
+    with patch("elevenlabs_mcp.server.client") as mock_client:
+        with pytest.raises(ElevenLabsMcpError, match="exactly one"):
+            create_pronunciation_dictionary(name="d")
+        with pytest.raises(ElevenLabsMcpError, match="exactly one"):
+            create_pronunciation_dictionary(
+                name="d",
+                rules=[{"string_to_replace": "a", "type": "alias", "alias": "b"}],
+                input_file_path="/tmp/x.pls",
+            )
+        mock_client.pronunciation_dictionaries.create_from_rules.assert_not_called()
