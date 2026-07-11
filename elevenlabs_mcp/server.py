@@ -15,6 +15,7 @@ import httpx
 import os
 import sys
 import base64
+from contextlib import ExitStack
 from datetime import datetime
 from io import BytesIO
 from typing import IO, Literal, Union, cast
@@ -680,50 +681,64 @@ def add_knowledge_base_to_agent(
 
     is_file_based = url is None
 
-    if url is not None:
-        response = client.conversational_ai.knowledge_base.documents.create_from_url(
-            name=knowledge_base_name,
-            url=url,
-        )
-    else:
-        if text is not None:
-            text_bytes = text.encode("utf-8")
-            text_io = BytesIO(text_bytes)
-            text_io.name = "text.txt"
-            text_io.content_type = "text/plain"
-            file = text_io
-        elif input_file_path is not None:
-            path = handle_input_file(
-                file_path=input_file_path, audio_content_check=False
+    with ExitStack() as stack:
+        if url is not None:
+            response = (
+                client.conversational_ai.knowledge_base.documents.create_from_url(
+                    name=knowledge_base_name,
+                    url=url,
+                )
             )
-            file = open(path, "rb")
+        else:
+            if text is not None:
+                text_bytes = text.encode("utf-8")
+                text_io = BytesIO(text_bytes)
+                text_io.name = "text.txt"
+                text_io.content_type = "text/plain"
+                file = text_io
+            elif input_file_path is not None:
+                path = handle_input_file(
+                    file_path=input_file_path, audio_content_check=False
+                )
+                file = stack.enter_context(open(path, "rb"))
+            else:
+                # Unreachable due to provided_params validation above
+                make_error("Must provide either a URL, a file, or text")
 
-        response = client.conversational_ai.knowledge_base.documents.create_from_file(
-            name=knowledge_base_name,
-            file=file,
-        )
+            response = (
+                client.conversational_ai.knowledge_base.documents.create_from_file(
+                    name=knowledge_base_name,
+                    file=file,
+                )
+            )
 
     agent = client.conversational_ai.agents.get(agent_id=agent_id)
+    conversation_config = agent.conversation_config
+    agent_config = conversation_config.agent
 
-    agent_config = agent.conversation_config.agent
-    knowledge_base_list = (
-        agent_config.get("prompt", {}).get("knowledge_base", []) if agent_config else []
-    )
-    knowledge_base_list.append(
-        KnowledgeBaseLocator(
-            type="file" if is_file_based else "url",
-            name=knowledge_base_name,
-            id=response.id,
+    if agent_config is None or agent_config.prompt is None:
+        make_error(
+            "Agent has no prompt configuration; cannot attach knowledge base. "
+            "Create or update the agent with a system prompt first."
         )
-    )
 
-    if agent_config and "prompt" not in agent_config:
-        agent_config["prompt"] = {}
-    if agent_config:
-        agent_config["prompt"]["knowledge_base"] = knowledge_base_list
+    locator = KnowledgeBaseLocator(
+        type="file" if is_file_based else "url",
+        name=knowledge_base_name,
+        id=response.id,
+    )
+    existing_kb = list(agent_config.prompt.knowledge_base or [])
+    existing_kb.append(locator)
+    updated_prompt = agent_config.prompt.model_copy(
+        update={"knowledge_base": existing_kb}
+    )
+    updated_agent = agent_config.model_copy(update={"prompt": updated_prompt})
+    updated_conversation_config = conversation_config.model_copy(
+        update={"agent": updated_agent}
+    )
 
     client.conversational_ai.agents.update(
-        agent_id=agent_id, conversation_config=agent.conversation_config
+        agent_id=agent_id, conversation_config=updated_conversation_config
     )
     return TextContent(
         type="text",
@@ -981,7 +996,7 @@ def list_conversations(
 
             conv_info = f"""Conversation ID: {conv.conversation_id}
 Status: {conv.status}
-Agent: {conv.agent_name or 'N/A'} (ID: {conv.agent_id})
+Agent: {conv.agent_name or "N/A"} (ID: {conv.agent_id})
 Started: {start_time}
 Duration: {conv.call_duration_secs} seconds
 Messages: {conv.message_count}
