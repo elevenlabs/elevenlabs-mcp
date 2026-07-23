@@ -43,6 +43,7 @@ from elevenlabs_mcp.utils import (
     handle_multiple_files_output_mode,
     get_output_mode_description,
     resolve_resource_path,
+    detect_dub_file_extension,
 )
 
 from elevenlabs_mcp.convai import create_conversation_config, create_platform_settings
@@ -247,6 +248,9 @@ def get_elevenlabs_resource(filename: str) -> Resource:
             opus_48000_96
             opus_48000_128
             opus_48000_192
+        pronunciation_dictionary_locators (list, optional): Pronunciation dictionaries to apply,
+            as a list of locators, each a dict {{"pronunciation_dictionary_id": "...", "version_id": "..."}}.
+            Create dictionaries with create_pronunciation_dictionary.
 
     Returns:
         Text content with file path or MCP resource with audio data, depending on output mode.
@@ -265,6 +269,7 @@ def text_to_speech(
     language: str = "en",
     output_format: str = "mp3_44100_128",
     model_id: str | None = None,
+    pronunciation_dictionary_locators: list[dict] | None = None,
 ) -> Union[TextContent, EmbeddedResource]:
     if text == "":
         make_error("Text is required.")
@@ -295,6 +300,12 @@ def text_to_speech(
             else "eleven_multilingual_v2"
         )
 
+    tts_kwargs = {}
+    if pronunciation_dictionary_locators:
+        tts_kwargs["pronunciation_dictionary_locators"] = (
+            pronunciation_dictionary_locators
+        )
+
     audio_data = client.text_to_speech.convert(
         text=text,
         voice_id=voice_id,
@@ -307,6 +318,7 @@ def text_to_speech(
             "use_speaker_boost": use_speaker_boost,
             "speed": speed,
         },
+        **tts_kwargs,
     )
     audio_bytes = b"".join(audio_data)
 
@@ -1511,6 +1523,480 @@ def upload_music_for_inpainting(
         type="text",
         text=f"song_id: {result.song_id}{plan_section}",
     )
+
+
+@mcp.tool(
+    description="""Dub a local audio/video file or a remote URL into another language using ElevenLabs Dubbing.
+
+    Provide exactly one source: a local `input_file_path` OR a `source_url` (a direct media URL or a
+    supported video URL such as YouTube). Dubbing runs asynchronously: this returns a `dubbing_id`
+    immediately. Poll `get_dubbing` until the status is `dubbed`, then download the result with
+    `get_dubbed_file` (and subtitles with `get_dubbing_transcript`).
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        target_language: Language to dub into, as an ISO 639-1/639-3 code (e.g. 'en', 'es', 'fr').
+        input_file_path: Path to a local audio or video file. Mutually exclusive with source_url.
+        source_url: URL of the source video/audio. Mutually exclusive with input_file_path.
+        source_language: Source language ISO code. Auto-detected when omitted.
+        num_speakers: Number of speakers. 0 (default) auto-detects.
+        name: Optional name for the dubbing project.
+        watermark: Whether to watermark the output video. Defaults to False.
+        start_time: Optional start time (seconds) to dub only a segment of the source.
+        end_time: Optional end time (seconds) to dub only a segment of the source.
+        highest_resolution: Whether to use the highest resolution available. Defaults to False.
+        drop_background_audio: Drop background audio from the final dub (better for speeches/monologues). Defaults to False.
+        dubbing_studio: Prepare the dub for editing as a Dubbing Studio resource (enables render_dubbing). Defaults to False.
+    """,
+)
+def dub_audio_or_video(
+    target_language: str,
+    input_file_path: str | None = None,
+    source_url: str | None = None,
+    source_language: str | None = None,
+    num_speakers: int = 0,
+    name: str | None = None,
+    watermark: bool = False,
+    start_time: int | None = None,
+    end_time: int | None = None,
+    highest_resolution: bool = False,
+    drop_background_audio: bool = False,
+    dubbing_studio: bool = False,
+) -> TextContent:
+    if bool(input_file_path) == bool(source_url):
+        make_error("Provide exactly one of input_file_path or source_url.")
+
+    create_kwargs = {
+        "target_lang": target_language,
+        "num_speakers": num_speakers,
+        "watermark": watermark,
+        "highest_resolution": highest_resolution,
+        "drop_background_audio": drop_background_audio,
+        "dubbing_studio": dubbing_studio,
+    }
+    if input_file_path:
+        file_path = handle_input_file(input_file_path, audio_content_check=False)
+        with file_path.open("rb") as f:
+            file_bytes = f.read()
+        create_kwargs["file"] = (
+            file_path.name,
+            file_bytes,
+            get_mime_type(file_path.suffix),
+        )
+    if source_url:
+        create_kwargs["source_url"] = source_url
+    if source_language:
+        create_kwargs["source_lang"] = source_language
+    if name:
+        create_kwargs["name"] = name
+    if start_time is not None:
+        create_kwargs["start_time"] = start_time
+    if end_time is not None:
+        create_kwargs["end_time"] = end_time
+
+    response = client.dubbing.create(**create_kwargs)
+
+    return TextContent(
+        type="text",
+        text=(
+            f"Dubbing started.\n"
+            f"dubbing_id: {response.dubbing_id}\n"
+            f"expected_duration_sec: {response.expected_duration_sec}\n"
+            f"Poll get_dubbing('{response.dubbing_id}') until status is 'dubbed', "
+            f"then use get_dubbed_file to download the result."
+        ),
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""Get the status and metadata of a dubbing project.
+
+    Use this to check whether a dub started with dub_audio_or_video has finished (status becomes 'dubbed').
+
+    Args:
+        dubbing_id: ID of the dubbing project.
+    """,
+)
+def get_dubbing(dubbing_id: str) -> TextContent:
+    meta = client.dubbing.get(dubbing_id)
+    target_languages = (
+        ", ".join(meta.target_languages) if meta.target_languages else "-"
+    )
+    lines = [
+        f"dubbing_id: {meta.dubbing_id}",
+        f"name: {meta.name}",
+        f"status: {meta.status}",
+        f"source_language: {meta.source_language}",
+        f"target_languages: {target_languages}",
+        f"editable: {meta.editable}",
+    ]
+    if meta.error:
+        lines.append(f"error: {meta.error}")
+    return TextContent(type="text", text="\n".join(lines))
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""List dubbing projects on the account.
+
+    Args:
+        dubbing_status: Optional status filter, e.g. 'dubbing', 'dubbed' or 'failed'.
+        page_size: Maximum number of dubs to return. Defaults to 20.
+    """,
+)
+def list_dubbings(
+    dubbing_status: str | None = None,
+    page_size: int = 20,
+) -> TextContent:
+    list_kwargs = {"page_size": page_size}
+    if dubbing_status:
+        list_kwargs["dubbing_status"] = dubbing_status
+    page = client.dubbing.list(**list_kwargs)
+    if not page.dubs:
+        return TextContent(type="text", text="No dubbing projects found.")
+    rows = [
+        f"- {d.dubbing_id} | {d.status} | {d.name} | "
+        f"targets: {', '.join(d.target_languages) if d.target_languages else '-'}"
+        for d in page.dubs
+    ]
+    return TextContent(
+        type="text", text="\n".join(rows) + f"\nhas_more: {page.has_more}"
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
+    description="""Delete a dubbing project.
+
+    ⚠️ This permanently deletes the dubbing project and its generated media on ElevenLabs.
+
+    Args:
+        dubbing_id: ID of the dubbing project to delete.
+    """,
+)
+def delete_dubbing(dubbing_id: str) -> TextContent:
+    client.dubbing.delete(dubbing_id)
+    return TextContent(type="text", text=f"Deleted dubbing project {dubbing_id}.")
+
+
+@mcp.tool(
+    description=f"""Download the dubbed audio/video file for a language from a completed dubbing project. {get_output_mode_description(output_mode)}.
+
+    Returns the original automatic dub. If the dub was edited in Dubbing Studio, use render_dubbing instead.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        dubbing_id: ID of the dubbing project.
+        language_code: Language code of the dub to download (e.g. 'es').
+        output_directory: Directory where files should be saved (only used when saving files).
+            Defaults to $HOME/Desktop if not provided.
+    """,
+)
+def get_dubbed_file(
+    dubbing_id: str,
+    language_code: str,
+    output_directory: str | None = None,
+) -> Union[TextContent, EmbeddedResource]:
+    output_path = make_output_path(output_directory, base_path)
+    audio_bytes = b"".join(client.dubbing.audio.get(dubbing_id, language_code))
+    if not audio_bytes:
+        make_error(
+            f"No dubbed media returned for dubbing_id={dubbing_id}, language={language_code}. "
+            f"The dub may not be finished yet — check get_dubbing."
+        )
+    extension = detect_dub_file_extension(audio_bytes)
+    output_file_name = make_output_file(
+        f"dub_{language_code}", dubbing_id, extension, full_id=True
+    )
+    return handle_output_mode(audio_bytes, output_path, output_file_name, output_mode)
+
+
+@mcp.tool(
+    description=f"""Get the transcript/subtitles of a dubbing project as SRT, WebVTT or JSON. {get_output_mode_description(output_mode)}.
+
+    Use language_code='source' for the original transcript, or a target language code for the translated one.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        dubbing_id: ID of the dubbing project.
+        language_code: Language code of the transcript, or 'source' for the original. Defaults to 'source'.
+        format_type: Output format: 'srt', 'webvtt' or 'json'. Defaults to 'srt'.
+        output_directory: Directory where files should be saved (only used when saving files).
+            Defaults to $HOME/Desktop if not provided.
+        save_to_file: Whether to save the transcript to a file. Defaults to True.
+        return_to_client_directly: Whether to return the transcript text directly. Defaults to False.
+    """,
+)
+def get_dubbing_transcript(
+    dubbing_id: str,
+    language_code: str = "source",
+    format_type: Literal["srt", "webvtt", "json"] = "srt",
+    output_directory: str | None = None,
+    save_to_file: bool = True,
+    return_to_client_directly: bool = False,
+) -> Union[TextContent, EmbeddedResource]:
+    if not save_to_file and not return_to_client_directly:
+        make_error("Must save transcript to file or return it to the client directly.")
+
+    # The SDK's get_transcript_for_dub parses every response as JSON, which breaks
+    # for the plain-text 'srt'/'webvtt' formats, so call the endpoint directly.
+    response = httpx.get(
+        f"{origin}/v1/dubbing/{dubbing_id}/transcript/{language_code}",
+        params={"format_type": format_type},
+        headers={"xi-api-key": api_key},
+        timeout=60,
+    )
+    if response.status_code >= 300:
+        make_error(
+            f"Failed to fetch transcript (status {response.status_code}): {response.text[:300]}"
+        )
+    transcript = response.text
+
+    if return_to_client_directly:
+        return TextContent(type="text", text=transcript)
+
+    output_path = make_output_path(output_directory, base_path)
+    extension = "vtt" if format_type == "webvtt" else format_type
+    output_file_name = make_output_file(
+        f"dub_transcript_{language_code}", dubbing_id, extension, full_id=True
+    )
+    return handle_output_mode(
+        transcript.encode("utf-8"), output_path, output_file_name, output_mode
+    )
+
+
+@mcp.tool(
+    description="""Render the output media for a language from a Dubbing Studio project.
+
+    Only for dubs created with dubbing_studio=True (and typically edited). Rendering is asynchronous:
+    this triggers the render and returns a render_id. Ensure all segments have been dubbed first, then
+    poll get_dubbing until the project is ready and download with get_dubbed_file.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        dubbing_id: ID of the dubbing project.
+        language: Target language code to render (e.g. 'es'), or 'original' for the source track.
+        render_type: Output format: one of 'mp4', 'aac', 'mp3', 'wav', 'aaf', 'tracks_zip', 'clips_zip'. Defaults to 'mp4'.
+        normalize_volume: Whether to normalize the volume of the rendered audio. Defaults to False.
+    """,
+)
+def render_dubbing(
+    dubbing_id: str,
+    language: str,
+    render_type: Literal[
+        "mp4", "aac", "mp3", "wav", "aaf", "tracks_zip", "clips_zip"
+    ] = "mp4",
+    normalize_volume: bool = False,
+) -> TextContent:
+    response = client.dubbing.resource.render(
+        dubbing_id,
+        language,
+        render_type=render_type,
+        normalize_volume=normalize_volume,
+    )
+    return TextContent(
+        type="text",
+        text=(
+            f"Render started.\n"
+            f"render_id: {response.render_id}\n"
+            f"version: {response.version}\n"
+            f"Poll get_dubbing('{dubbing_id}') until ready, then download with get_dubbed_file."
+        ),
+    )
+
+
+@mcp.tool(
+    description="""Create a pronunciation dictionary from inline rules or a lexicon file (PLS).
+
+    A pronunciation dictionary controls how specific words/phrases are pronounced in text-to-speech.
+    Provide exactly one source: `rules` (inline) OR `input_file_path` (a .pls/.txt lexicon file).
+
+    Each inline rule is a dict, either:
+      - alias:   {"string_to_replace": "TTS", "type": "alias", "alias": "text to speech"}
+      - phoneme: {"string_to_replace": "tomato", "type": "phoneme", "phoneme": "təˈmeɪtoʊ", "alphabet": "ipa"}
+
+    Apply the returned pronunciation_dictionary_id + version_id in text_to_speech via its
+    pronunciation_dictionary_locators argument.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        name: Name of the pronunciation dictionary.
+        rules: List of pronunciation rules (see formats above). Mutually exclusive with input_file_path.
+        input_file_path: Path to a .pls/.txt lexicon file. Mutually exclusive with rules.
+        description: Optional description of the dictionary.
+    """,
+)
+def create_pronunciation_dictionary(
+    name: str,
+    rules: list[dict] | None = None,
+    input_file_path: str | None = None,
+    description: str | None = None,
+) -> TextContent:
+    if bool(rules) == bool(input_file_path):
+        make_error("Provide exactly one of rules or input_file_path.")
+
+    if rules:
+        create_kwargs = {"rules": rules, "name": name}
+        if description:
+            create_kwargs["description"] = description
+        response = client.pronunciation_dictionaries.create_from_rules(**create_kwargs)
+    else:
+        file_path = handle_input_file(input_file_path, audio_content_check=False)
+        with file_path.open("rb") as f:
+            file_bytes = f.read()
+        create_kwargs = {
+            "name": name,
+            "file": (file_path.name, file_bytes, get_mime_type(file_path.suffix)),
+        }
+        if description:
+            create_kwargs["description"] = description
+        response = client.pronunciation_dictionaries.create_from_file(**create_kwargs)
+
+    return TextContent(
+        type="text",
+        text=(
+            f"Created pronunciation dictionary.\n"
+            f"pronunciation_dictionary_id: {response.id}\n"
+            f"version_id: {response.version_id}\n"
+            f"name: {response.name}\n"
+            f"rules: {response.version_rules_num}\n"
+            f"Apply it in text_to_speech via pronunciation_dictionary_locators="
+            f'[{{"pronunciation_dictionary_id": "{response.id}", "version_id": "{response.version_id}"}}].'
+        ),
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""List pronunciation dictionaries on the account.
+
+    Args:
+        page_size: Maximum number of dictionaries to return. Defaults to 20.
+    """,
+)
+def list_pronunciation_dictionaries(page_size: int = 20) -> TextContent:
+    page = client.pronunciation_dictionaries.list(page_size=page_size)
+    dictionaries = page.pronunciation_dictionaries
+    if not dictionaries:
+        return TextContent(type="text", text="No pronunciation dictionaries found.")
+    rows = [
+        f"- {d.id} | {d.name} | latest_version_id: {getattr(d, 'latest_version_id', '-')}"
+        for d in dictionaries
+    ]
+    return TextContent(
+        type="text", text="\n".join(rows) + f"\nhas_more: {page.has_more}"
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    description="""Get a pronunciation dictionary's metadata.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+    """,
+)
+def get_pronunciation_dictionary(pronunciation_dictionary_id: str) -> TextContent:
+    d = client.pronunciation_dictionaries.get(pronunciation_dictionary_id)
+    lines = [
+        f"id: {d.id}",
+        f"name: {d.name}",
+        f"latest_version_id: {d.latest_version_id}",
+        f"rules: {d.latest_version_rules_num}",
+    ]
+    if d.description:
+        lines.append(f"description: {d.description}")
+    return TextContent(type="text", text="\n".join(lines))
+
+
+@mcp.tool(
+    description="""Add rules to an existing pronunciation dictionary (creates a new version).
+
+    Each rule is a dict — alias {"string_to_replace", "type": "alias", "alias"} or
+    phoneme {"string_to_replace", "type": "phoneme", "phoneme", "alphabet": "ipa"}.
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+        rules: List of rules to add.
+    """,
+)
+def add_pronunciation_dictionary_rules(
+    pronunciation_dictionary_id: str,
+    rules: list[dict],
+) -> TextContent:
+    response = client.pronunciation_dictionaries.rules.add(
+        pronunciation_dictionary_id, rules=rules
+    )
+    return TextContent(
+        type="text",
+        text=(
+            f"Added {len(rules)} rule(s).\n"
+            f"new version_id: {response.version_id}\n"
+            f"total rules: {response.version_rules_num}"
+        ),
+    )
+
+
+@mcp.tool(
+    description="""Remove rules from a pronunciation dictionary by the strings they replace (creates a new version).
+
+    ⚠️ COST WARNING: This tool makes an API call to ElevenLabs which may incur costs. Only use when explicitly requested by the user.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+        rule_strings: List of 'string_to_replace' values whose rules should be removed.
+    """,
+)
+def remove_pronunciation_dictionary_rules(
+    pronunciation_dictionary_id: str,
+    rule_strings: list[str],
+) -> TextContent:
+    response = client.pronunciation_dictionaries.rules.remove(
+        pronunciation_dictionary_id, rule_strings=rule_strings
+    )
+    return TextContent(
+        type="text",
+        text=(
+            f"Removed {len(rule_strings)} rule(s).\n"
+            f"new version_id: {response.version_id}\n"
+            f"total rules: {response.version_rules_num}"
+        ),
+    )
+
+
+@mcp.tool(
+    description=f"""Download a pronunciation dictionary version as a PLS lexicon file. {get_output_mode_description(output_mode)}.
+
+    Args:
+        pronunciation_dictionary_id: ID of the pronunciation dictionary.
+        version_id: Version ID of the dictionary to download.
+        output_directory: Directory where files should be saved (only used when saving files).
+            Defaults to $HOME/Desktop if not provided.
+    """,
+)
+def download_pronunciation_dictionary(
+    pronunciation_dictionary_id: str,
+    version_id: str,
+    output_directory: str | None = None,
+) -> Union[TextContent, EmbeddedResource]:
+    output_path = make_output_path(output_directory, base_path)
+    pls_bytes = b"".join(
+        client.pronunciation_dictionaries.download(
+            pronunciation_dictionary_id, version_id
+        )
+    )
+    output_file_name = make_output_file(
+        "pronunciation_dictionary", pronunciation_dictionary_id, "pls", full_id=True
+    )
+    return handle_output_mode(pls_bytes, output_path, output_file_name, output_mode)
 
 
 def _is_broken_pipe_error(exc: BaseException) -> bool:

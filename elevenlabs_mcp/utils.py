@@ -337,6 +337,25 @@ def get_mime_type(file_extension: str) -> str:
     return mime_types.get(ext.lower(), "application/octet-stream")
 
 
+def detect_dub_file_extension(data: bytes) -> str:
+    """
+    Detect whether dubbed media bytes are an MP4 (video) or MP3 (audio) file.
+
+    The dubbing audio endpoint streams either an MP4 or an MP3 depending on the
+    source media, and the SDK does not surface which one, so we sniff the header.
+
+    Returns:
+        str: "mp4" or "mp3" (defaults to "mp4" when the header is unrecognised).
+    """
+    if len(data) >= 8 and data[4:8] == b"ftyp":
+        return "mp4"
+    if data[:3] == b"ID3" or (
+        len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0
+    ):
+        return "mp3"
+    return "mp4"
+
+
 def generate_resource_uri(filename: str) -> str:
     """
     Generate a resource URI for a given filename.

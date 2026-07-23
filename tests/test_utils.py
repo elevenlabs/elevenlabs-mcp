@@ -14,8 +14,13 @@ from elevenlabs_mcp.utils import (
     looks_like_unsubstituted_template,
     parse_location,
     resolve_resource_path,
+    detect_dub_file_extension,
 )
-from elevenlabs_mcp.server import simulate_conversation
+from elevenlabs_mcp.server import (
+    simulate_conversation,
+    dub_audio_or_video,
+    create_pronunciation_dictionary,
+)
 
 
 def test_make_error():
@@ -230,6 +235,7 @@ def test_handle_input_file():
         with pytest.raises(ElevenLabsMcpError):
             handle_input_file(str(temp_path / "nonexistent.mp3"))
 
+
 def test_simulate_conversation_bad_criteria_returns_error():
     """Missing fields in evaluation criteria should return an error without calling API."""
     with patch("elevenlabs_mcp.server.client") as mock_client:
@@ -237,10 +243,11 @@ def test_simulate_conversation_bad_criteria_returns_error():
             simulate_conversation(
                 agent_id="agent_abc",
                 simulated_user_prompt="Be difficult.",
-                extra_evaluation_criteria=[{"id": "check"}], 
+                extra_evaluation_criteria=[{"id": "check"}],
             )
-        
+
         mock_client.conversational_ai.agents.simulate_conversation.assert_not_called()
+
 
 def test_simulate_conversation_formats_transcript():
     """Conversation turns should appear correctly in output."""
@@ -263,7 +270,9 @@ def test_simulate_conversation_formats_transcript():
         mock_response = MagicMock()
         mock_response.simulated_conversation = [user_turn, agent_turn]
         mock_response.analysis = analysis
-        mock_client.conversational_ai.agents.simulate_conversation.return_value = mock_response
+        mock_client.conversational_ai.agents.simulate_conversation.return_value = (
+            mock_response
+        )
 
         result = simulate_conversation(
             agent_id="agent_abc",
@@ -281,7 +290,9 @@ def test_simulate_conversation_handles_empty_response():
         mock_response = MagicMock()
         mock_response.simulated_conversation = []
         mock_response.analysis = None
-        mock_client.conversational_ai.agents.simulate_conversation.return_value = mock_response
+        mock_client.conversational_ai.agents.simulate_conversation.return_value = (
+            mock_response
+        )
 
         result = simulate_conversation(
             agent_id="agent_abc",
@@ -324,3 +335,44 @@ def test_parse_location_invalid():
     """Invalid values raise ValueError."""
     with pytest.raises(ValueError):
         parse_location("invalid")
+
+
+def test_detect_dub_file_extension():
+    """Sniff MP4 vs MP3 dubbed media from the leading bytes."""
+    # MP4: 'ftyp' box at offset 4
+    assert detect_dub_file_extension(b"\x00\x00\x00\x20ftypisom") == "mp4"
+    # MP3: ID3 tag
+    assert detect_dub_file_extension(b"ID3\x04\x00\x00") == "mp3"
+    # MP3: MPEG audio frame sync
+    assert detect_dub_file_extension(b"\xff\xfb\x90\x64\x00") == "mp3"
+    # Unknown / too short → default to mp4
+    assert detect_dub_file_extension(b"\x00\x01\x02\x03") == "mp4"
+    assert detect_dub_file_extension(b"") == "mp4"
+
+
+def test_dub_audio_or_video_requires_exactly_one_source():
+    """Passing neither or both of input_file_path/source_url errors without an API call."""
+    with patch("elevenlabs_mcp.server.client") as mock_client:
+        with pytest.raises(ElevenLabsMcpError, match="exactly one"):
+            dub_audio_or_video(target_language="es")
+        with pytest.raises(ElevenLabsMcpError, match="exactly one"):
+            dub_audio_or_video(
+                target_language="es",
+                input_file_path="/tmp/x.mp4",
+                source_url="https://example.com/x.mp4",
+            )
+        mock_client.dubbing.create.assert_not_called()
+
+
+def test_create_pronunciation_dictionary_requires_exactly_one_source():
+    """Passing neither or both of rules/input_file_path errors without an API call."""
+    with patch("elevenlabs_mcp.server.client") as mock_client:
+        with pytest.raises(ElevenLabsMcpError, match="exactly one"):
+            create_pronunciation_dictionary(name="d")
+        with pytest.raises(ElevenLabsMcpError, match="exactly one"):
+            create_pronunciation_dictionary(
+                name="d",
+                rules=[{"string_to_replace": "a", "type": "alias", "alias": "b"}],
+                input_file_path="/tmp/x.pls",
+            )
+        mock_client.pronunciation_dictionaries.create_from_rules.assert_not_called()
