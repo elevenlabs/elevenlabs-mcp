@@ -33,6 +33,7 @@ dependencies = [
     "python-dotenv==1.0.1",
     "pydantic>=2.12",
     "httpx==0.28.1",
+    "httpcore>=1.0.9",
     "elevenlabs>=2.56.0",
     "fuzzywuzzy==0.18.0",
     "python-Levenshtein>=0.25.0",
