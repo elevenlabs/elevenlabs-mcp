@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Felevenlabs%2Felevenlabs-mcp.svg)](https://mcptoplist.com/server/glama%2Felevenlabs%2Felevenlabs-mcp)
+
 ![export](https://github.com/user-attachments/assets/ee379feb-348d-48e7-899c-134f7f7cd74f)
 
 <div class="title-block" style="text-align: center;" align="center">
