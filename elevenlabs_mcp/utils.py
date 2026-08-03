@@ -173,12 +173,24 @@ def check_audio_file(path: Path) -> bool:
     return path.suffix.lower() in audio_extensions
 
 
+def get_input_base_path() -> Path:
+    """Resolve the directory that caller-supplied input file paths are confined to.
+
+    Mirrors the ``ELEVENLABS_MCP_BASE_PATH`` / ``$HOME/Desktop`` fallback used by
+    ``make_output_path``, so the same environment variable controls both where
+    generated files are written and which directory input files may be read from.
+    """
+    base = os.environ.get("ELEVENLABS_MCP_BASE_PATH")
+    if looks_like_unsubstituted_template(base):
+        base = None
+    if not base:
+        base = str(Path.home() / "Desktop")
+    return Path(os.path.expanduser(base)).resolve()
+
+
 def handle_input_file(file_path: str, audio_content_check: bool = True) -> Path:
-    if not os.path.isabs(file_path) and not os.environ.get("ELEVENLABS_MCP_BASE_PATH"):
-        make_error(
-            "File path must be an absolute path if ELEVENLABS_MCP_BASE_PATH is not set"
-        )
-    path = Path(file_path)
+    base_dir = get_input_base_path()
+    path = resolve_resource_path(file_path, base_dir)
     if not path.exists() and path.parent.exists():
         parent_directory = path.parent
         similar_files = try_find_similar_files(path.name, parent_directory)

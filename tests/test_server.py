@@ -29,7 +29,9 @@ def test_voice_clone_passes_open_file_objects_with_real_bytes(tmp_path):
             description=description,
         )
 
-    with patch.object(server, "client") as mock_client:
+    with patch.object(server, "client") as mock_client, patch.dict(
+        os.environ, {"ELEVENLABS_MCP_BASE_PATH": str(tmp_path)}
+    ):
         assert isinstance(mock_client, MagicMock)
         mock_client.voices.ivc.create.side_effect = fake_create
 
@@ -58,7 +60,9 @@ def test_voice_clone_single_file_closes_handle_after_call(tmp_path):
             description=description,
         )
 
-    with patch.object(server, "client") as mock_client:
+    with patch.object(server, "client") as mock_client, patch.dict(
+        os.environ, {"ELEVENLABS_MCP_BASE_PATH": str(tmp_path)}
+    ):
         assert isinstance(mock_client, MagicMock)
         mock_client.voices.ivc.create.side_effect = fake_create
 
@@ -75,10 +79,12 @@ def test_voice_clone_single_file_closes_handle_after_call(tmp_path):
 def test_voice_clone_missing_file_does_not_call_sdk(tmp_path):
     missing_file = tmp_path / "missing.mp3"
 
-    with patch.object(server, "client") as mock_client:
+    with patch.object(server, "client") as mock_client, patch.dict(
+        os.environ, {"ELEVENLABS_MCP_BASE_PATH": str(tmp_path)}
+    ):
         assert isinstance(mock_client, MagicMock)
 
-        with pytest.raises(ElevenLabsMcpError):
+        with pytest.raises(ElevenLabsMcpError, match="does not exist"):
             server.voice_clone(
                 name="Test Voice",
                 files=[str(missing_file.resolve())],
