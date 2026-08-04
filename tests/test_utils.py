@@ -15,6 +15,7 @@ from elevenlabs_mcp.utils import (
     looks_like_unsubstituted_template,
     parse_location,
     resolve_resource_path,
+    handle_output_mode,
 )
 from elevenlabs_mcp.server import simulate_conversation
 
@@ -183,6 +184,36 @@ def test_resolve_resource_path_relative_normal(tmp_path):
     target.write_bytes(b"x")
     result = resolve_resource_path("ok.mp3", tmp_path)
     assert result == target.resolve()
+
+
+def test_handle_output_mode_rejects_traversal_filename(tmp_path):
+    """Mirrors the read-side traversal fix: a filename with '../' segments must
+    not let handle_output_mode write outside the intended output directory."""
+    output_path = tmp_path / "outputs"
+    output_path.mkdir()
+    malicious_filename = Path("safe_prefix/../../escape.mp3")
+    with pytest.raises(ElevenLabsMcpError):
+        handle_output_mode(b"x", output_path, malicious_filename, "files")
+    assert not (tmp_path / "escape.mp3").exists()
+
+
+def test_handle_output_mode_rejects_absolute_filename(tmp_path):
+    output_path = tmp_path / "outputs"
+    output_path.mkdir()
+    outside_target = tmp_path / "escape.mp3"
+    with pytest.raises(ElevenLabsMcpError):
+        handle_output_mode(b"x", output_path, str(outside_target), "files")
+    assert not outside_target.exists()
+
+
+def test_handle_output_mode_writes_normal_filename(tmp_path):
+    output_path = tmp_path / "outputs"
+    output_path.mkdir()
+    result = handle_output_mode(b"x", output_path, "ok.mp3", "files")
+    written = output_path / "ok.mp3"
+    assert written.exists()
+    assert written.read_bytes() == b"x"
+    assert str(written) in result.text
 
 
 def test_find_similar_filenames():

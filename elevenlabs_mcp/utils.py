@@ -430,7 +430,7 @@ def handle_output_mode(
                                             EmbeddedResource for 'resources' and 'both' modes
     """
     file_extension = Path(filename).suffix.lstrip(".")
-    full_file_path = output_path / filename
+    full_file_path = resolve_resource_path(str(filename), output_path)
 
     if output_mode == "files":
         # Save to disk and return TextContent with success message
