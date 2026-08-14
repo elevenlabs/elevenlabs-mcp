@@ -67,7 +67,7 @@ Try asking Claude:
 
 You can configure how the MCP server handles file outputs using these environment variables in your `claude_desktop_config.json`:
 
-- **`ELEVENLABS_MCP_BASE_PATH`**: Specify the base path for file operations with relative paths (default: `~/Desktop`)
+- **`ELEVENLABS_MCP_BASE_PATH`**: Specify the base path for file operations (default: `~/Desktop`). This directory is also the security boundary for **input** files: any path passed to a tool that reads a local file (e.g. `speech_to_text`, `isolate_audio`, `speech_to_speech`, `video_to_music`, `upload_music_for_inpainting`) must resolve inside this directory, whether given as an absolute or relative path. Paths outside it — even if absolute and previously accepted — are rejected. Set this to a directory that contains everything you need to read from or write to.
 - **`ELEVENLABS_MCP_OUTPUT_MODE`**: Control how generated files are returned (default: `files`)
 
 #### Output Modes

@@ -1,3 +1,4 @@
+import os
 import pytest
 from pathlib import Path
 import tempfile
@@ -14,6 +15,7 @@ from elevenlabs_mcp.utils import (
     looks_like_unsubstituted_template,
     parse_location,
     resolve_resource_path,
+    handle_output_mode,
 )
 from elevenlabs_mcp.server import simulate_conversation
 
@@ -184,6 +186,36 @@ def test_resolve_resource_path_relative_normal(tmp_path):
     assert result == target.resolve()
 
 
+def test_handle_output_mode_rejects_traversal_filename(tmp_path):
+    """Mirrors the read-side traversal fix: a filename with '../' segments must
+    not let handle_output_mode write outside the intended output directory."""
+    output_path = tmp_path / "outputs"
+    output_path.mkdir()
+    malicious_filename = Path("safe_prefix/../../escape.mp3")
+    with pytest.raises(ElevenLabsMcpError):
+        handle_output_mode(b"x", output_path, malicious_filename, "files")
+    assert not (tmp_path / "escape.mp3").exists()
+
+
+def test_handle_output_mode_rejects_absolute_filename(tmp_path):
+    output_path = tmp_path / "outputs"
+    output_path.mkdir()
+    outside_target = tmp_path / "escape.mp3"
+    with pytest.raises(ElevenLabsMcpError):
+        handle_output_mode(b"x", output_path, str(outside_target), "files")
+    assert not outside_target.exists()
+
+
+def test_handle_output_mode_writes_normal_filename(tmp_path):
+    output_path = tmp_path / "outputs"
+    output_path.mkdir()
+    result = handle_output_mode(b"x", output_path, "ok.mp3", "files")
+    written = output_path / "ok.mp3"
+    assert written.exists()
+    assert written.read_bytes() == b"x"
+    assert str(written) in result.text
+
+
 def test_find_similar_filenames():
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -218,17 +250,65 @@ def test_try_find_similar_files():
 
 def test_handle_input_file():
     with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+        temp_path = Path(temp_dir).resolve()
         test_file = temp_path / "test.mp3"
 
         with open(test_file, "wb") as f:
             f.write(b"\xff\xfb\x90\x64\x00")
 
-        result = handle_input_file(str(test_file))
-        assert result == test_file
+        with patch.dict(os.environ, {"ELEVENLABS_MCP_BASE_PATH": str(temp_path)}):
+            result = handle_input_file(str(test_file))
+            assert result == test_file
 
-        with pytest.raises(ElevenLabsMcpError):
-            handle_input_file(str(temp_path / "nonexistent.mp3"))
+            with pytest.raises(ElevenLabsMcpError):
+                handle_input_file(str(temp_path / "nonexistent.mp3"))
+
+            # Relative paths resolve against the configured base directory.
+            relative_result = handle_input_file("test.mp3")
+            assert relative_result == test_file
+
+
+def test_handle_input_file_rejects_path_outside_base_dir():
+    with tempfile.TemporaryDirectory() as base_dir, tempfile.TemporaryDirectory() as outside_dir:
+        base_path = Path(base_dir).resolve()
+        outside_path = Path(outside_dir).resolve() / "secret.mp3"
+
+        with open(outside_path, "wb") as f:
+            f.write(b"\xff\xfb\x90\x64\x00")
+
+        with patch.dict(os.environ, {"ELEVENLABS_MCP_BASE_PATH": str(base_path)}):
+            with pytest.raises(ElevenLabsMcpError, match="outside of allowed directory"):
+                handle_input_file(str(outside_path))
+
+            # Containment applies even when the audio content check is disabled,
+            # e.g. the video_to_music call site.
+            with pytest.raises(ElevenLabsMcpError, match="outside of allowed directory"):
+                handle_input_file(str(outside_path), audio_content_check=False)
+
+
+def test_handle_input_file_rejects_symlink_escape():
+    with tempfile.TemporaryDirectory() as base_dir, tempfile.TemporaryDirectory() as outside_dir:
+        base_path = Path(base_dir).resolve()
+        outside_target = Path(outside_dir).resolve() / "secret.mp3"
+        outside_target.write_bytes(b"\xff\xfb\x90\x64\x00")
+
+        symlink_path = base_path / "link.mp3"
+        symlink_path.symlink_to(outside_target)
+
+        with patch.dict(os.environ, {"ELEVENLABS_MCP_BASE_PATH": str(base_path)}):
+            with pytest.raises(ElevenLabsMcpError, match="outside of allowed directory"):
+                handle_input_file(str(symlink_path))
+
+
+def test_handle_input_file_defaults_to_home_desktop():
+    with tempfile.TemporaryDirectory() as outside_dir:
+        outside_path = Path(outside_dir).resolve() / "secret.mp3"
+        outside_path.write_bytes(b"\xff\xfb\x90\x64\x00")
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ELEVENLABS_MCP_BASE_PATH", None)
+            with pytest.raises(ElevenLabsMcpError, match="outside of allowed directory"):
+                handle_input_file(str(outside_path))
 
 def test_simulate_conversation_bad_criteria_returns_error():
     """Missing fields in evaluation criteria should return an error without calling API."""
