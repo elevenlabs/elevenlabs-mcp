@@ -1,5 +1,12 @@
 ![export](https://github.com/user-attachments/assets/ee379feb-348d-48e7-899c-134f7f7cd74f)
 
+> [!WARNING]
+> **This local MCP server is deprecated in favor of the [ElevenLabs hosted MCP server](https://elevenlabs.io/docs/agents-platform/operate/hosted-mcp).**
+>
+> The hosted server is available at `https://api.elevenlabs.io/v1/mcp`, with nothing to install or run locally. It authenticates with OAuth, so no API keys are copied into your client. See the [hosted MCP server documentation](https://elevenlabs.io/docs/agents-platform/operate/hosted-mcp) to connect from Claude, Cursor, or any other MCP client.
+>
+> This repository is no longer actively maintained.
+
 <div class="title-block" style="text-align: center;" align="center">
 
   [![Discord Community](https://img.shields.io/badge/discord-@elevenlabs-000000.svg?style=for-the-badge&logo=discord&labelColor=000)](https://discord.gg/elevenlabs)
